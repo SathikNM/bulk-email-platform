@@ -28,7 +28,7 @@
 | openapi-typescript | Typed API client |
 
 ## Infrastructure
-PostgreSQL 16 (pg_trgm, citext, pgcrypto), Redis 7, MinIO (local S3), Mailpit (local SMTP capture), Docker Compose.
+PostgreSQL 16 (pg_trgm, citext, pgcrypto), Redis 7, SeaweedFS (local S3; MinIO images were withdrawn), Mailpit (local SMTP capture), Docker Compose.
 
 ## Risks
 | Risk | Impact | Mitigation |

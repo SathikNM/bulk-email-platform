@@ -42,7 +42,7 @@ flowchart LR
 
   PG[(PostgreSQL 16)]
   RD[(Redis 7<br/>broker + rate limiter + cache)]
-  S3[(Object storage<br/>S3 / MinIO<br/>images, import files)]
+  S3[(Object storage<br/>S3 / SeaweedFS<br/>images, import files)]
   SES[Amazon SES<br/>or SMTP provider]
   SNS[SNS topic]
   LLM[LLM API]
@@ -106,7 +106,7 @@ bulk-email-platform/
 │   ├── src/lib/                   # api client (generated from OpenAPI), auth, i18n
 │   └── package.json
 ├── infra/
-│   └── docker-compose.yml         # postgres, redis, minio, mailpit (local SMTP sink)
+│   └── docker-compose.yml         # postgres, redis, s3, mailpit (local SMTP sink)
 ├── docs/                          # this architecture package
 ├── .env.example
 └── README.md
