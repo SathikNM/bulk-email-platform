@@ -1,6 +1,6 @@
 # 03 — API Structure (REST, `/api/v1`)
 
-Status: **PROPOSED — awaiting approval**
+Status: **APPROVED** (14 Nov 2026)
 
 - Auth: `Authorization: Bearer <access JWT>`; workspace selected via `X-Workspace-Id` header and checked against membership.
 - Errors: RFC 7807 problem+json. Validation errors return field-level detail.

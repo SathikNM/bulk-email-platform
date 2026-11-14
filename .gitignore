@@ -23,3 +23,6 @@ out/
 Thumbs.db
 .vscode/
 .idea/
+
+# Script logs
+logs/*.log

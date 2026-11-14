@@ -2,7 +2,7 @@
 
 Email marketing and bulk email management platform: company/contact database, audience segmentation, email studio, campaigns, SES-based bulk sending, and analytics.
 
-**Current status: Phase 1 complete (architecture + project structure). Awaiting architecture approval before Phase 2.**
+**Current status: Phase 2 complete (database schema, migrations, tenant isolation). Next: Phase 3, Companies.**
 
 ## Docs
 1. [System architecture & design decisions](docs/01-architecture.md)
@@ -10,6 +10,7 @@ Email marketing and bulk email management platform: company/contact database, au
 3. [API endpoints](docs/03-api-endpoints.md)
 4. [Implementation roadmap](docs/04-roadmap.md)
 5. [Dependencies & risks](docs/05-dependencies-and-risks.md)
+6. [Phase reports](docs/phase-reports/)
 
 ## Stack
 Next.js / React / TypeScript / Tailwind / shadcn/ui · FastAPI (Python) · PostgreSQL · Redis + Celery · Amazon SES · Recharts · GrapesJS + TipTap
@@ -25,12 +26,17 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\act
 pip install -e ".[dev]"
 cp ../.env.example .env
 uvicorn app.main:app --reload       # http://localhost:8000/api/docs
-pytest
+python -m alembic upgrade head     # create/upgrade the schema
+python -m app.db.seed              # demo workspace, admin user, industries
+pytest                             # integration tests against real Postgres (uses <db>_test)
 ```
+
+On Windows without a local Python, double-click `scripts\phase2-verify.cmd`: it runs migrations, seed and tests inside Docker and writes `logs\phase2-verify.log`.
 
 ## Phase status
 | Phase | Status |
 |---|---|
 | 1. Structure & architecture | ✅ Done |
-| 2. Schema & migrations | ⏳ Awaiting approval |
-| 3–10 | Pending |
+| 2. Schema & migrations | ✅ Done ([report](docs/phase-reports/phase-2.md)) |
+| 3. Companies | ⏳ Next |
+| 4–10 | Pending |

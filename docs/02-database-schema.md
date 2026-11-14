@@ -1,6 +1,6 @@
 # 02 — Database Schema & ER Diagram (PostgreSQL 16)
 
-Status: **PROPOSED — awaiting approval**
+Status: **APPROVED** (14 Nov 2026)
 
 Conventions
 - Primary keys: `UUID` (`gen_random_uuid()`); human-readable codes (`COMP-000123`) as separate `code` columns where users need them.
@@ -144,3 +144,25 @@ Pagination: keyset (`created_at, id`) for large lists; offset for small admin li
 Allowed fields: industry, country, city, company, company_size, job_title, department, contact_category, company_category, tags, subscription_status, email_verification_status, created_at.
 Operators: eq, neq, in, not_in, contains, not_contains, starts_with, is_empty, is_not_empty, before, after.
 The compiler whitelists fields and operators and always ANDs the eligibility gate onto the "eligible count".
+
+## 7. Implementation notes (Phase 2, migration `0001`)
+
+Changes made during implementation, relative to the design above:
+
+| Change | Reason |
+|---|---|
+| Added `refresh_tokens` table | Needed for rotating refresh tokens (decision D13) |
+| Added `workspace_id` to `consent_records`, `campaign_recipients`, `campaign_daily_stats` | Lets RLS cover the high-volume child tables directly |
+| Added `identity_status`, `import_entity`, `job_status` enums | Sending-identity verification and import job tracking |
+| Contacts default to `subscription_status = pending` | Public addresses are never treated as consent |
+| `companies.normalized_name` is a generated column (strips spaces and punctuation, keeps Arabic letters) | Duplicate detection with `pg_trgm` similarity |
+| CHECK constraints: ISO-2 country codes, non-negative revenue, `@` in email, positive send limits, scheduled campaigns need `scheduled_at`, non-draft campaigns need `approved_at` | Integrity enforced at the database, not only the API |
+
+### Tenant isolation (RLS)
+- 16 workspace tables have `ENABLE` + `FORCE ROW LEVEL SECURITY` with policy `<table>_workspace_isolation`.
+- The API and workers run tenant queries as the non-owner role **`bep_app`** (`SET LOCAL ROLE bep_app`) with `app.workspace_id` set per transaction (`app/db/session.py → workspace_scope()`).
+- With no workspace set, queries return zero rows. Writes into another workspace fail the `WITH CHECK` clause.
+- Trusted system jobs (seed, admin tooling) use `system_scope()`, which sets `app.bypass_rls = on`. Production must use a separate, non-superuser login role for the API.
+
+### Verification
+`backend/tests/test_schema.py`: 23 integration tests against real PostgreSQL 16, plus 2 API smoke tests. They cover the migration round-trip, model/migration drift, uniqueness rules, foreign-key behaviour, enum and CHECK enforcement, triggers, webhook replay de-duplication, and RLS isolation.

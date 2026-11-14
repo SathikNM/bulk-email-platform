@@ -1,6 +1,6 @@
 # 01 — System Architecture
 
-Status: **PROPOSED — awaiting approval** (Phase 1)
+Status: **APPROVED** (14 Nov 2026)
 
 ## 1. Project inspection result
 

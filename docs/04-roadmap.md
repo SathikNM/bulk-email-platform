@@ -1,11 +1,11 @@
 # 04 — Implementation Roadmap
 
-Status: **PROPOSED — awaiting approval**. Each phase ends with a report (done / pending / blockers), targeted tests, a DB integrity check and a regression run.
+Status: **APPROVED** (14 Nov 2026). Each phase ends with a report (done / pending / blockers), targeted tests, a DB integrity check and a regression run.
 
 | Phase | Scope | Key deliverables | Exit criteria (tests) |
 |---|---|---|---|
-| **1. Structure & architecture** ✅ *this commit* | Repo layout, docs, docker-compose, FastAPI skeleton, health checks, CI stub | `docs/01-05`, `backend/app/main.py`, `/health` | App boots; `pytest` health test passes |
-| **2. Schema & migrations** | All tables from `02-database-schema.md`, enums, indexes, RLS, triggers, seed (roles, industries, demo workspace) | Alembic revision `0001_initial` | `alembic upgrade head` + `downgrade base` round-trip on real Postgres; constraint tests (dup email, dup recipient) |
+| **1. Structure & architecture** ✅ | Repo layout, docs, docker-compose, FastAPI skeleton, health checks, CI stub | `docs/01-05`, `backend/app/main.py`, `/health` | App boots; `pytest` health test passes |
+| **2. Schema & migrations** ✅ | All tables from `02-database-schema.md`, enums, indexes, RLS, triggers, seed (roles, industries, demo workspace) | Alembic revision `0001_initial` | `alembic upgrade head` + `downgrade base` round-trip on real Postgres; constraint tests (dup email, dup recipient) |
 | **3. Companies** | Auth + RBAC (needed by every later module), company CRUD, tags/categories, search/filter, duplicate detection + merge, CSV/XLSX import with mapping, export | API + Companies list, profile, import wizard UI | Integration tests against Postgres; 10k-row import benchmark |
 | **4. Contacts** | Contact CRUD under companies, consent records, import with consent mapping, duplicate emails, unsubscribe | API + Contacts UI | Import rejects rows without email; dup email blocked; consent history recorded |
 | **5. Taxonomy & segmentation** | Industries, categories, tags admin; rule-tree compiler; live count; preview; save/edit/duplicate | `SegmentCompiler`, segment builder UI | Unit tests per operator; the brief's Construction/KSA/Riyadh/CFO example returns correct set; eligible count excludes suppressed |
