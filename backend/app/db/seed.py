@@ -11,19 +11,9 @@ import sqlalchemy as sa
 
 from app.core.security import hash_password
 from app.db.session import system_scope
-from app.models import Category, Industry, User, Workspace, WorkspaceMember
-from app.models.enums import CategoryScope, MemberRole
-
-INDUSTRIES = [
-    "Construction", "Real Estate", "Manufacturing", "Retail", "Wholesale & Distribution",
-    "Healthcare", "Education", "Financial Services", "Banking", "Insurance",
-    "Information Technology", "Software & SaaS", "Telecommunications", "Oil & Gas", "Energy & Utilities",
-    "Logistics & Transportation", "Hospitality & Tourism", "Food & Beverage", "Professional Services",
-    "Legal", "Government & Public Sector", "Non-Profit", "Media & Entertainment", "Agriculture",
-    "Automotive", "Mining", "Pharmaceuticals", "E-commerce",
-]
-COMPANY_CATEGORIES = ["Prospect", "Client", "Partner", "Vendor"]
-CONTACT_CATEGORIES = ["Decision Maker", "Influencer", "Finance", "Operations"]
+from app.models import User, Workspace, WorkspaceMember
+from app.models.enums import MemberRole
+from app.services.workspaces import bootstrap_workspace
 
 
 def run() -> None:
@@ -50,17 +40,7 @@ def run() -> None:
 
         if s.get(WorkspaceMember, (ws.id, user.id)) is None:
             s.add(WorkspaceMember(workspace_id=ws.id, user_id=user.id, role=MemberRole.OWNER))
-
-        existing = set(s.scalars(sa.select(Industry.name).where(Industry.workspace_id == ws.id)))
-        s.add_all(Industry(workspace_id=ws.id, name=n) for n in INDUSTRIES if n not in existing)
-
-        existing_cats = set(
-            s.execute(sa.select(Category.scope, Category.name).where(Category.workspace_id == ws.id))
-        )
-        for scope, names in ((CategoryScope.COMPANY, COMPANY_CATEGORIES),
-                             (CategoryScope.CONTACT, CONTACT_CATEGORIES)):
-            s.add_all(Category(workspace_id=ws.id, scope=scope, name=n)
-                      for n in names if (scope, n) not in existing_cats)
+        bootstrap_workspace(s, ws.id)
 
     print(f"Seed complete. Workspace: demo  Admin: {email}")
     if created_user and generated:

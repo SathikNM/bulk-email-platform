@@ -93,3 +93,117 @@ def new_contact(conn, ws: uuid.UUID, company: uuid.UUID, email: str, **kw) -> uu
     keys = ", ".join(cols)
     vals = ", ".join(f":{k}" for k in cols)
     return conn.scalar(sa.text(f"INSERT INTO contacts ({keys}) VALUES ({vals}) RETURNING id"), cols)
+
+
+# ---------------------------------------------------------------- API fixtures
+@pytest.fixture(scope="session", autouse=True)
+def app_env(tmp_path_factory, request):
+    """Point the app at the test DB, run Celery eagerly, store uploads in a temp dir."""
+    from app.workers.celery_app import celery
+
+    settings.LOCAL_STORAGE_DIR = str(tmp_path_factory.mktemp("uploads"))
+    settings.STORAGE_BACKEND = "local"
+    settings.SES_WEBHOOK_VERIFY_SIGNATURE = True
+    celery.conf.task_always_eager = True
+    celery.conf.task_eager_propagates = True
+    yield
+
+
+@pytest.fixture(scope="session")
+def api_engine(migrated):
+    from app.db.session import configure_engine
+
+    return configure_engine(migrated)
+
+
+@pytest.fixture
+def client(api_engine):
+    from fastapi.testclient import TestClient
+
+    from app.core.redis import get_redis
+    from app.main import app
+
+    for k in get_redis().scan_iter("login_fail:*"):
+        get_redis().delete(k)
+    with TestClient(app) as c:
+        yield c
+
+
+def make_user(email=None, password="Str0ng!Passw0rd", superadmin=False):
+    from app.core.security import hash_password
+    from app.db.session import system_scope
+    from app.models import User
+
+    email = email or f"u{uuid.uuid4().hex[:10]}@example.com"
+    with system_scope() as s:
+        u = User(email=email, full_name="Test User", password_hash=hash_password(password),
+                 is_superadmin=superadmin)
+        s.add(u)
+        s.flush()
+        return u.id, email, password
+
+
+def make_workspace_with(role="owner", user=None):
+    from app.db.session import system_scope
+    from app.models import Workspace, WorkspaceMember
+    from app.models.enums import MemberRole
+    from app.services.workspaces import bootstrap_workspace
+
+    uid, email, pw = user or make_user()
+    with system_scope() as s:
+        slug = f"ws-{uuid.uuid4().hex[:8]}"
+        ws = Workspace(name=slug, slug=slug, legal_address="Riyadh")
+        s.add(ws)
+        s.flush()
+        s.add(WorkspaceMember(workspace_id=ws.id, user_id=uid, role=MemberRole(role)))
+        bootstrap_workspace(s, ws.id)
+        return ws.id, (uid, email, pw)
+
+
+def login(client, email, password) -> str:
+    r = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert r.status_code == 200, r.text
+    return r.json()["access_token"]
+
+
+class Api:
+    """Small helper bound to a workspace + user for concise tests."""
+
+    def __init__(self, client, ws_id, token):
+        self.c, self.ws, self.token = client, ws_id, token
+
+    @property
+    def h(self):
+        return {"Authorization": f"Bearer {self.token}", "X-Workspace-Id": str(self.ws)}
+
+    def get(self, url, **kw):
+        return self.c.get("/api/v1" + url, headers=self.h, **kw)
+
+    def post(self, url, **kw):
+        return self.c.post("/api/v1" + url, headers=self.h, **kw)
+
+    def patch(self, url, **kw):
+        return self.c.patch("/api/v1" + url, headers=self.h, **kw)
+
+    def put(self, url, **kw):
+        return self.c.put("/api/v1" + url, headers=self.h, **kw)
+
+    def delete(self, url, **kw):
+        return self.c.delete("/api/v1" + url, headers=self.h, **kw)
+
+
+@pytest.fixture
+def api(client):
+    ws, (uid, email, pw) = make_workspace_with("owner")
+    return Api(client, ws, login(client, email, pw))
+
+
+def api_with_role(client, ws_id, role):
+    from app.db.session import system_scope
+    from app.models import WorkspaceMember
+    from app.models.enums import MemberRole
+
+    uid, email, pw = make_user()
+    with system_scope() as s:
+        s.add(WorkspaceMember(workspace_id=ws_id, user_id=uid, role=MemberRole(role)))
+    return Api(client, ws_id, login(client, email, pw))

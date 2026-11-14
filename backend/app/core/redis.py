@@ -1,0 +1,11 @@
+"""Shared Redis client (rate limiting, login lockout, send throttling)."""
+from functools import lru_cache
+
+import redis
+
+from app.core.config import settings
+
+
+@lru_cache
+def get_redis() -> redis.Redis:
+    return redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)

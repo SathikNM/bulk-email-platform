@@ -14,4 +14,4 @@ def test_health() -> None:
 def test_meta() -> None:
     r = client.get("/api/v1/meta")
     assert r.status_code == 200
-    assert r.json() == {"modules": []}
+    assert "companies" in r.json()["modules"]
