@@ -204,5 +204,28 @@ def send_reply(db: Session, workspace_id, original: MailMessage, body_text: str,
     return row
 
 
+def compose(db: Session, workspace_id, account: SendingAccount, to: str, subject: str, body_text: str,
+            user_id=None) -> MailMessage:
+    """A new one-to-one email (not a test, not a campaign), written in the platform."""
+    from app.models import Contact
+    from app.providers import OutgoingEmail, ProviderError, build_provider
+    html = "<div>" + "<br>".join(html_lib.escape(line) for line in body_text.splitlines()) + "</div>"
+    contact_id = db.scalar(sa.select(Contact.id).where(sa.func.lower(Contact.email) == to.lower()).limit(1))
+    row = start_outbound(db, workspace_id, account, to, subject, kind="direct", text=body_text, html=html,
+                         contact_id=contact_id, user_id=user_id)
+    provider = build_provider(account)
+    try:
+        provider.send(OutgoingEmail(from_email=account.from_email, from_name=account.from_name, to=to,
+                                    reply_to=reply_to_header(account, row), subject=subject, html=html,
+                                    text=body_text, headers={"Message-ID": row.message_id_hdr},
+                                    tags={"type": "direct"}))
+        finish_outbound(row, True)
+    except ProviderError as e:
+        finish_outbound(row, False, str(e))
+    finally:
+        provider.close()
+    return row
+
+
 def recipients_of(addresses: str) -> list[str]:
     return [a.lower() for _, a in getaddresses([addresses]) if a]

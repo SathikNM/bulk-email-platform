@@ -3,17 +3,24 @@ import uuid
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from app.core.config import settings
 from app.core.deps import Ctx, Marketer, Viewer
 from app.core.errors import BadRequest
-from app.models import Campaign, Contact
+from app.models import Campaign, Contact, SendingAccount, Suppression
 from app.models.mailbox import MailMessage
 from app.services import mailbox
 from app.services.common import audit, get_or_404, paginate
 
 router = APIRouter(prefix="/mailbox", tags=["mailbox"])
+
+
+class ComposeIn(BaseModel):
+    account_id: uuid.UUID | None = None
+    to: EmailStr
+    subject: str = Field(min_length=1, max_length=500)
+    body: str = Field(min_length=1, max_length=50_000)
 
 
 class ReplyIn(BaseModel):
@@ -95,4 +102,20 @@ def reply(message_id: uuid.UUID, body: ReplyIn, ctx: Ctx = Marketer):
     audit(ctx, "reply", "mail_message", row.id, after={"to": row.to_addr, "status": row.status})
     if row.status == "failed":
         raise BadRequest(f"Reply not sent: {row.error}")
+    return _summary(row)
+
+
+@router.post("/compose", status_code=201)
+def compose(body: ComposeIn, ctx: Ctx = Marketer):
+    account = (get_or_404(ctx.db, SendingAccount, body.account_id, "Sending account") if body.account_id else
+               ctx.db.scalar(sa.select(SendingAccount).where(SendingAccount.is_default.is_(True))))
+    if account is None:
+        raise BadRequest("No sending account configured. Add one under Sending Accounts.")
+    to = str(body.to).lower()
+    if ctx.db.scalar(sa.select(Suppression.id).where(sa.func.lower(Suppression.email) == to)):
+        raise BadRequest(f"{to} is on the suppression list (unsubscribed or bounced) and cannot be emailed")
+    row = mailbox.compose(ctx.db, ctx.workspace_id, account, to, body.subject.strip(), body.body, user_id=ctx.user.id)
+    audit(ctx, "compose", "mail_message", row.id, after={"to": to, "from": account.from_email, "status": row.status})
+    if row.status == "failed":
+        raise BadRequest(f"Email not sent: {row.error}")
     return _summary(row)

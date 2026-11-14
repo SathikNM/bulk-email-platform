@@ -1,15 +1,15 @@
 "use client";
 
 import clsx from "clsx";
-import { AlertTriangle, ArrowLeft, Inbox as InboxIcon, Reply, Send } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Inbox as InboxIcon, PenSquare, Reply, Send } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Alert, Badge, Button, Empty, ErrorState, Loading, PageHeader, Pagination, SearchInput, Tabs } from "@/components/ui";
+import { Alert, Badge, Button, Drawer, Empty, ErrorState, Field, Loading, PageHeader, Pagination, SearchInput, Select, Tabs } from "@/components/ui";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtDate } from "@/lib/format";
 import { useAction, useWsQuery } from "@/lib/hooks";
-import type { Page } from "@/lib/types";
+import type { Page, SendingAccount } from "@/lib/types";
 
 type Msg = {
   id: string; thread_id: string; direction: "in" | "out"; kind: string; status: string; from_addr: string;
@@ -18,7 +18,7 @@ type Msg = {
 };
 type Thread = { thread_id: string; subject: string; contact: { id: string; email: string; name: string | null } | null; campaign: { id: string; name: string } | null; messages: Msg[] };
 
-const KIND: Record<string, string> = { test: "Test", campaign: "Campaign", reply: "Reply", inbound: "Reply", auto_reply: "Auto-reply" };
+const KIND: Record<string, string> = { test: "Test", campaign: "Campaign", reply: "Reply", direct: "Email", inbound: "Reply", auto_reply: "Auto-reply" };
 
 export default function InboxPage() {
   const { can } = useAuth();
@@ -26,6 +26,7 @@ export default function InboxPage() {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState<string | null>(null);
+  const [composing, setComposing] = useState(false);
   const summary = useWsQuery(["mailbox-summary"], () => api.get<{ unread: number; reply_capture: boolean; inbound_domain: string | null }>("/mailbox/summary"), { refetchInterval: 30000 });
   const list = useWsQuery(["mailbox", folder, q, page], () => api.get<Page<Msg>>("/mailbox", { folder, q: q || undefined, page }), { refetchInterval: 30000 });
   useEffect(() => { setPage(1); setOpen(null); }, [folder, q]);
@@ -33,7 +34,8 @@ export default function InboxPage() {
 
   return (
     <>
-      <PageHeader title="Inbox" subtitle="Every email the platform sends, and the replies it receives, in one place." />
+      <PageHeader title="Inbox" subtitle="Every email the platform sends, and the replies it receives, in one place." actions={can("marketer") && <Button variant="primary" icon={<PenSquare className="h-4 w-4" />} onClick={() => setComposing(true)}>New email</Button>} />
+      <Compose open={composing} onClose={() => setComposing(false)} onSent={(threadId) => { setComposing(false); setFolder("sent"); setTimeout(() => setOpen(threadId), 50); }} />
       {summary.data && !summary.data.reply_capture && (
         <div className="mb-4"><Alert tone="amber" title="Replies are not captured yet">Replies currently go to each sending account&apos;s own mailbox (e.g. Outlook). They will appear here once the platform runs on the mail server with reply capture turned on. The Sent folder already works.</Alert></div>
       )}
@@ -128,5 +130,31 @@ function ThreadView({ id, canReply, onBack, onRead }: { id: string; canReply: bo
         </div>
       )}
     </div>
+  );
+}
+
+function Compose({ open, onClose, onSent }: { open: boolean; onClose: () => void; onSent: (threadId: string) => void }) {
+  const accounts = useWsQuery(["sending-accounts"], () => api.get<SendingAccount[]>("/sending-accounts"), { enabled: open });
+  const [f, setF] = useState({ account_id: "", to: "", subject: "", body: "" });
+  useEffect(() => {
+    if (open && accounts.data && !f.account_id) {
+      const d = accounts.data.find((a) => a.is_default) ?? accounts.data[0];
+      if (d) setF((x) => ({ ...x, account_id: d.id }));
+    }
+  }, [open, accounts.data]);
+  const send = useAction(() => api.post<Msg>("/mailbox/compose", { ...f, account_id: f.account_id || null }), {
+    success: "Email sent", invalidate: [["mailbox"]],
+    onSuccess: (m) => { setF({ account_id: f.account_id, to: "", subject: "", body: "" }); onSent(m.thread_id); },
+  });
+  return (
+    <Drawer open={open} onClose={onClose} title="New email" footer={<><Button onClick={onClose}>Discard</Button><Button variant="primary" icon={<Send className="h-4 w-4" />} loading={send.isPending} disabled={!f.to.includes("@") || !f.subject.trim() || !f.body.trim()} onClick={() => send.mutate(undefined)}>Send</Button></>}>
+      <div className="space-y-4">
+        <Field label="From"><Select value={f.account_id} onChange={(v) => setF({ ...f, account_id: v })} options={(accounts.data || []).map((a) => ({ value: a.id, label: `${a.from_name ? a.from_name + " <" + a.from_email + ">" : a.from_email}${a.verification_status !== "verified" ? " (not verified)" : ""}` }))} /></Field>
+        <Field label="To"><input className="input" type="email" placeholder="name@company.com" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value.trim() })} /></Field>
+        <Field label="Subject"><input className="input" value={f.subject} onChange={(e) => setF({ ...f, subject: e.target.value })} /></Field>
+        <Field label="Message"><textarea className="input min-h-64" placeholder="Write your email…" value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} /></Field>
+        <p className="text-xs text-slate-500">Sent as a normal email (no [TEST] label). It appears in Sent, and replies are grouped with it in the Inbox.</p>
+      </div>
+    </Drawer>
   );
 }

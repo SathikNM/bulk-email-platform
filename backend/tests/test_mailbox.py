@@ -97,3 +97,17 @@ def test_receiver_rejects_unknown_reply_tokens(api, inbound):
             c.sendmail("x@y.z", ["replies+00000000000000000000000000000000.abcdefghij@news.primecfo-demo.com"], b"x")
         with pytest.raises(smtplib.SMTPRecipientsRefused):
             c.sendmail("x@y.z", ["anyone@news.primecfo-demo.com"], b"x")
+
+
+def test_compose_new_email(api, smtp_sink):
+    a = smtp_account(api, smtp_sink.port)
+    r = api.post("/mailbox/compose", json={"account_id": a["id"], "to": "Person@Example.org", "subject": "Meeting",
+                                           "body": "Hi,\nSee you at 10.\nThanks"})
+    assert r.status_code == 201, r.text
+    m = r.json()
+    assert m["kind"] == "direct" and m["status"] == "sent" and m["to_addr"] == "person@example.org"
+    got = smtp_sink.messages[-1]
+    assert got["to"] == ["person@example.org"] and got["msg"]["Subject"] == "Meeting"
+    assert api.get("/mailbox", params={"folder": "sent"}).json()["items"][0]["subject"] == "Meeting"
+    api.post("/suppressions", json={"email": "gone@example.org", "reason": "manual"})
+    assert api.post("/mailbox/compose", json={"to": "gone@example.org", "subject": "x", "body": "y"}).status_code == 400
