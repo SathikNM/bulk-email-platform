@@ -117,3 +117,18 @@ def test_campaign_via_direct_delivery_suppresses_hard_bounce(api, smtp_sink, mon
         assert s.scalar(sa.select(Suppression).where(Suppression.email == "reject@gulf.sa")) is not None
     sent = [m for m in smtp_sink.messages if m["to"] == ["user0@gulf.sa"]][-1]
     assert sent["raw"].startswith(b"DKIM-Signature:") and sent["from"] == "info@gulf-demo.sa"
+
+
+def test_return_path_subdomain_keeps_main_spf(key, smtp_sink, monkeypatch):
+    monkeypatch.setattr(direct, "mx_hosts", lambda d: ["127.0.0.1"])
+    p = DirectProvider("primecfo-demo.com", "mail.primecfo-demo.com", "bep", key, timeout=5, port=smtp_sink.port,
+                       return_path_domain="news.primecfo-demo.com")
+    p.send(_mail("x@example.org"))
+    p.close()
+    m = smtp_sink.messages[-1]
+    assert m["from"] == "bounces@news.primecfo-demo.com" and m["msg"]["From"].addresses[0].addr_spec == "info@primecfo-demo.com"
+    recs = p.dns_records("203.0.113.7")
+    names = {(r["type"], r["name"]): r["value"] for r in recs}
+    assert names[("TXT", "news.primecfo-demo.com")] == "v=spf1 ip4:203.0.113.7 -all"
+    assert ("TXT", "primecfo-demo.com") not in names
+    assert names[("A", "news.primecfo-demo.com")] == "203.0.113.7"

@@ -26,7 +26,8 @@ def build_provider(account: SendingAccount) -> EmailProvider:
         from app.providers.direct import DirectProvider
         return DirectProvider(domain=account.domain, helo_hostname=creds.get("helo_hostname"),
                               dkim_selector=creds.get("dkim_selector") or "bep",
-                              dkim_private_key=creds.get("dkim_private_key"))
+                              dkim_private_key=creds.get("dkim_private_key"),
+                              return_path_domain=creds.get("return_path_domain"))
     from app.providers.smtp import SMTPProvider
     return SMTPProvider(host=creds.get("host", "localhost"), port=int(creds.get("port", 587)),
                         username=creds.get("username"), password=creds.get("password"),

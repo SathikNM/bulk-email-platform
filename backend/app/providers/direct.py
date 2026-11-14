@@ -119,8 +119,12 @@ class DirectProvider(EmailProvider):
     name = "direct"
 
     def __init__(self, domain: str, helo_hostname: str | None, dkim_selector: str, dkim_private_key: str | None,
-                 timeout: float = 30.0, rate_per_group: int = 2, port: int | None = None):
+                 timeout: float = 30.0, rate_per_group: int = 2, port: int | None = None,
+                 return_path_domain: str | None = None):
         self.domain = domain.lower()
+        # Envelope sender (bounce) domain, e.g. news.primecfo.sa: SPF is checked on it, so the main
+        # domain's SPF (Outlook etc.) stays untouched while From: stays info@<domain> (DMARC aligns via DKIM).
+        self.rp = (return_path_domain or "").strip().lower() or None
         self.helo = (helo_hostname or f"mail.{self.domain}").strip().lower()
         self.selector = (dkim_selector or "bep").strip()
         self.key = dkim_private_key
@@ -188,7 +192,7 @@ class DirectProvider(EmailProvider):
             self._pace(_mx_group(host))
             try:
                 conn = self._open(host)
-                conn.sendmail(email.from_email, [email.to], raw)
+                conn.sendmail(f"bounces@{self.rp}" if self.rp else email.from_email, [email.to], raw)
                 return msg["Message-ID"].strip("<>")
             except smtplib.SMTPRecipientsRefused as e:
                 code, text = next(iter(e.recipients.values()))
@@ -253,8 +257,9 @@ class DirectProvider(EmailProvider):
             a_ips = set()
         add("HELO hostname", ip in a_ips, f"{self.helo} → {', '.join(sorted(a_ips)) or 'not found'}")
 
-        spf = next((t for t in _txt(self.domain) if t.lower().startswith("v=spf1")), None)
-        add("SPF", spf and ip and f"ip4:{ip}" in spf, spf or "No SPF record")
+        spf_domain = self.rp or self.domain
+        spf = next((t for t in _txt(spf_domain) if t.lower().startswith("v=spf1")), None)
+        add("SPF" + (f" ({spf_domain})" if self.rp else ""), spf and ip and f"ip4:{ip}" in spf, spf or f"No SPF record on {spf_domain}")
 
         pub = dkim_public_record(self.key) if self.key else None
         dk = " ".join(_txt(f"{self.selector}._domainkey.{self.domain}")).replace(" ", "")
@@ -288,9 +293,15 @@ class DirectProvider(EmailProvider):
              "purpose": "Name of this mail server (HELO)"},
             {"type": "PTR", "name": ip_s, "value": self.helo,
              "purpose": "Reverse DNS: set by your internet provider / server host, not in your DNS zone"},
-            {"type": "TXT", "name": self.domain, "value": spf_value,
-             "purpose": "SPF: replace the existing SPF record with this one (keeps your current senders)"},
         ]
+        if self.rp:
+            recs += [{"type": "A", "name": self.rp, "value": ip_s,
+                      "purpose": "Bounce (envelope) domain: must exist"},
+                     {"type": "TXT", "name": self.rp, "value": spf_value,
+                      "purpose": f"SPF for the bounce domain only; the SPF of {self.domain} stays unchanged"}]
+        else:
+            recs.append({"type": "TXT", "name": self.domain, "value": spf_value,
+                         "purpose": "SPF: replace the existing SPF record with this one (keeps your current senders)"})
         if self.key:
             recs.append({"type": "TXT", "name": f"{self.selector}._domainkey.{self.domain}",
                          "value": dkim_public_record(self.key), "purpose": "DKIM: signature key for this domain"})

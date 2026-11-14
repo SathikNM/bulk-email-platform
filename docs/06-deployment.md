@@ -115,3 +115,16 @@ Infrastructure it needs (checked by **Verify & DNS**, which also prints the exac
 | DMARC TXT `_dmarc.<domain>` | Domain DNS |
 
 The platform must run on that machine 24/7 (workers deliver and retry in the background).
+
+### Keeping the main domain's SPF untouched (bounce subdomain)
+
+Set **Bounce subdomain** (e.g. `news.primecfo.sa`) on a direct-delivery account. The envelope sender becomes
+`bounces@news.primecfo.sa`, so SPF is evaluated on the subdomain (`A` + `TXT v=spf1 ip4:<IP> -all`) while recipients
+still see `From: info@primecfo.sa`. DMARC passes through DKIM alignment (`d=primecfo.sa`), which only needs the new
+`bep._domainkey.primecfo.sa` TXT record; the existing `primecfo.sa` SPF and Microsoft 365 mail flow are not changed.
+
+### Hosting
+
+Run the platform on a dedicated VPS whose provider allows outbound port 25 and self-service reverse DNS
+(AWS, GCP, Azure and Oracle block port 25 by default). 4 GB RAM / 40 GB disk is enough. Do not co-host it with
+other production systems.

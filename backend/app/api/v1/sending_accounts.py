@@ -33,6 +33,7 @@ class SMTPCreds(BaseModel):
 class DirectCreds(BaseModel):
     helo_hostname: str | None = Field(default=None, pattern=r"^[A-Za-z0-9.-]+$")
     dkim_selector: str = Field("bep", pattern=r"^[A-Za-z0-9-]+$")
+    return_path_domain: str | None = Field(default=None, pattern=r"^[A-Za-z0-9.-]+$")
     dkim_private_key: str | None = None
     warmup: bool = True
     warmup_started: str | None = None
