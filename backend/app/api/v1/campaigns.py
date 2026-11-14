@@ -22,6 +22,7 @@ from app.models.enums import CampaignStatus as S
 from app.models.enums import EventType, RecipientStatus, TextDirection
 from app.services import campaigns as svc
 from app.services import rendering
+from app.services.analytics import campaign_stats
 from app.services.common import audit, get_or_404, paginate, row_dict
 from app.services.jobs import enqueue_after_commit
 
@@ -68,30 +69,7 @@ class TestIn(BaseModel):
 
 
 def _stats(ctx: Ctx, campaign_id) -> dict:
-    rs = dict(ctx.db.execute(sa.select(CampaignRecipient.status, sa.func.count())
-                             .where(CampaignRecipient.campaign_id == campaign_id)
-                             .group_by(CampaignRecipient.status)).all())
-    total = sum(rs.values())
-    sent = sum(rs.get(s, 0) for s in (RecipientStatus.SENT, RecipientStatus.DELIVERED, RecipientStatus.BOUNCED,
-                                      RecipientStatus.COMPLAINED))
-    ev = ctx.db.execute(sa.select(
-        sa.func.count(sa.distinct(CampaignRecipient.id)).filter(CampaignRecipient.first_opened_at.isnot(None)),
-        sa.func.count(sa.distinct(CampaignRecipient.id)).filter(CampaignRecipient.first_clicked_at.isnot(None)),
-    ).where(CampaignRecipient.campaign_id == campaign_id)).one()
-    unsub = ctx.db.scalar(sa.select(sa.func.count(sa.distinct(EmailEvent.recipient_id))).where(
-        EmailEvent.campaign_id == campaign_id, EmailEvent.event_type == EventType.UNSUBSCRIBE))
-    delivered = rs.get(RecipientStatus.DELIVERED, 0) + rs.get(RecipientStatus.COMPLAINED, 0)
-    bounced = rs.get(RecipientStatus.BOUNCED, 0)
-
-    def pct(a, b):
-        return round(100.0 * a / b, 2) if b else 0.0
-    return {"recipients": total, "queued": rs.get(RecipientStatus.QUEUED, 0) + rs.get(RecipientStatus.SENDING, 0),
-            "sent": sent, "delivered": delivered, "bounced": bounced, "failed": rs.get(RecipientStatus.FAILED, 0),
-            "skipped": rs.get(RecipientStatus.SKIPPED_SUPPRESSED, 0), "complained": rs.get(RecipientStatus.COMPLAINED, 0),
-            "unique_opens": ev[0], "unique_clicks": ev[1], "unsubscribes": unsub,
-            "open_rate": pct(ev[0], sent), "click_rate": pct(ev[1], sent), "bounce_rate": pct(bounced, sent),
-            "unsubscribe_rate": pct(unsub, sent), "delivery_rate": pct(delivered, sent),
-            "progress": pct(total - rs.get(RecipientStatus.QUEUED, 0) - rs.get(RecipientStatus.SENDING, 0), total)}
+    return campaign_stats(ctx.db, campaign_id)
 
 
 def _out(ctx: Ctx, c: Campaign, detail: bool = False) -> dict:

@@ -149,3 +149,20 @@ def resume_stalled() -> dict:
     for cid, ws, n in rows:
         _enqueue_batches(str(cid), str(ws), -(-n // 50))
     return {"stuck_failed": stuck, "campaigns_resumed": len(rows)}
+
+
+# ---------------------------------------------------------------- analytics
+
+@celery.task(name="bep.rollup_all_stats")
+def rollup_all_stats() -> int:
+    from app.services import analytics
+
+    db = worker_session(system=True)
+    try:
+        ids = analytics.campaigns_with_recent_events(db)
+        for cid in ids:
+            analytics.rollup_campaign(db, cid)
+        db.commit()
+        return len(ids)
+    finally:
+        db.close()

@@ -24,7 +24,8 @@ from app.core.redis import get_redis
 from app.core.security import sign_payload
 from app.models import Campaign, CampaignRecipient, Company, Contact, EmailEvent, SendingAccount, Workspace
 from app.models.enums import CampaignStatus as S
-from app.models.enums import EventType, RecipientStatus as R
+from app.models.enums import EventType
+from app.models.enums import RecipientStatus as R
 from app.providers import AccountError, OutgoingEmail, PermanentError, TransientError, build_provider
 from app.services import rendering
 from app.services.compliance import eligibility_clause
@@ -166,6 +167,8 @@ def _maybe_complete(db: Session, c: Campaign) -> None:
         CampaignRecipient.status.in_([R.QUEUED, R.SENDING])))
     if pending == 0 and c.status == S.SENDING:
         c.status, c.completed_at = S.COMPLETED, datetime.now(timezone.utc)
+        from app.services.analytics import rollup_campaign
+        rollup_campaign(db, c.id)
 
 
 def send_batch(db: Session, campaign_id: uuid.UUID) -> dict:
