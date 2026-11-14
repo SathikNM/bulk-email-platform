@@ -13,6 +13,7 @@ from app.models.crm import (
     Suppression,
     Tag,
 )
+from app.models.mailbox import MailMessage
 from app.models.ops import AuditLog, ImportJob
 from app.models.sending import (
     Campaign,
@@ -30,6 +31,8 @@ RLS_TABLES = [
     "suppressions", "segments", "email_templates", "email_blocks", "sending_accounts",
     "campaigns", "campaign_recipients", "email_events", "campaign_daily_stats", "import_jobs",
 ]
+# Workspace tables added after the initial schema (their RLS policies live in later migrations).
+LATER_RLS_TABLES = ["mail_messages"]
 
 # Tables with an updated_at column maintained by trigger.
 UPDATED_AT_TABLES = [

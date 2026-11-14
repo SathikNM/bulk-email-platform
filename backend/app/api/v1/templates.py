@@ -12,7 +12,7 @@ from app.core.errors import BadRequest
 from app.models import Campaign, Company, Contact, EmailBlock, EmailTemplate, SendingAccount, Suppression, Workspace
 from app.models.enums import BlockType, EditorType, TextDirection
 from app.providers import OutgoingEmail, ProviderError, build_provider
-from app.services import rendering, storage
+from app.services import mailbox, rendering, storage
 from app.services.common import audit, get_or_404, paginate, row_dict
 
 router = APIRouter(tags=["email studio"])
@@ -197,13 +197,18 @@ def send_test(ctx: Ctx, rendered_fn, to: list[str], account_id: uuid.UUID | None
     results = []
     try:
         for addr in to:
+            subject = f"[TEST] {r['subject']}"
+            row = mailbox.start_outbound(ctx.db, ctx.workspace_id, account, addr, subject, kind="test",
+                                         text=r["text"], html=r["html"], user_id=ctx.user.id)
             try:
                 mid = provider.send(OutgoingEmail(
-                    from_email=account.from_email, from_name=account.from_name, reply_to=account.reply_to, to=addr,
-                    subject=f"[TEST] {r['subject']}", html=r["html"], text=r["text"],
-                    tags={"type": "test"}))
+                    from_email=account.from_email, from_name=account.from_name,
+                    reply_to=mailbox.reply_to_header(account, row), to=addr, subject=subject, html=r["html"],
+                    text=r["text"], headers={"Message-ID": row.message_id_hdr}, tags={"type": "test"}))
+                mailbox.finish_outbound(row, True)
                 results.append({"to": addr, "ok": True, "message_id": mid})
             except ProviderError as e:
+                mailbox.finish_outbound(row, False, str(e))
                 results.append({"to": addr, "ok": False, "error": str(e)})
     finally:
         provider.close()

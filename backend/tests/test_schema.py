@@ -8,7 +8,7 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 
 from alembic import command
-from app.models import RLS_TABLES, UPDATED_AT_TABLES, Base
+from app.models import LATER_RLS_TABLES, RLS_TABLES, UPDATED_AT_TABLES, Base
 from tests.conftest import _alembic_cfg, new_company, new_contact, new_workspace
 
 pytestmark = pytest.mark.usefixtures("migrated")
@@ -70,8 +70,8 @@ def test_rls_and_triggers_installed(engine):
             "SELECT event_object_table FROM information_schema.triggers "
             "WHERE trigger_name LIKE 'trg_%_updated_at'"
         )))
-    assert set(RLS_TABLES) <= policies
-    assert set(RLS_TABLES) <= forced
+    assert set(RLS_TABLES + LATER_RLS_TABLES) <= policies
+    assert set(RLS_TABLES + LATER_RLS_TABLES) <= forced
     assert set(UPDATED_AT_TABLES) <= triggers
 
 

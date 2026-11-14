@@ -9,6 +9,7 @@ from app.api.v1 import (
     companies,
     contacts,
     imports,
+    mailbox,
     segments,
     sending_accounts,
     suppressions,
@@ -19,11 +20,11 @@ from app.api.v1 import (
 
 api_router = APIRouter()
 for module in (auth, workspaces, taxonomy, companies, contacts, imports, suppressions, segments,
-               templates, ai, sending_accounts, campaigns, analytics):
+               templates, ai, sending_accounts, campaigns, analytics, mailbox):
     api_router.include_router(module.router)
 
 MODULES = ["auth", "workspaces", "taxonomy", "companies", "contacts", "imports", "suppressions", "segments",
-           "templates", "ai", "sending_accounts", "campaigns", "analytics"]
+           "templates", "ai", "sending_accounts", "campaigns", "analytics", "mailbox"]
 
 
 @api_router.get("/meta", tags=["meta"])

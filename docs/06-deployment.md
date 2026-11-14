@@ -159,3 +159,12 @@ If the office IP changes and the VPN is unavailable, the admin UI is still reach
 server's loopback, so it is never reachable from the internet. Two-factor sign-in still applies.
 To change the allowlist permanently, edit `ADMIN_ALLOWED_CIDRS` in `scripts/deploy-config.cmd` and re-run
 `scripts/deploy-vps.cmd`.
+
+## Inbox (sent mail and replies)
+
+**Inbox** in the sidebar lists everything the platform sends (tests, campaign emails, replies) in **Sent** and
+**Failed**, and the replies it receives in **Inbox**, grouped into conversations with a reply box.
+Reply capture is enabled by `INBOUND_DOMAIN` (set automatically to `news.<domain>` on the VPS): outbound mail
+carries `Reply-To: replies+<token>@news.<domain>`, the `MX news.<domain>` record routes replies to the
+platform's own receiver on port 25, and each reply is filed into its thread and (with `INBOUND_FORWARD_COPY`)
+copied to the sending account's normal mailbox. Tokens are HMAC-signed; any other address is rejected.

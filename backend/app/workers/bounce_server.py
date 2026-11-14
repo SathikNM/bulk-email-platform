@@ -12,7 +12,8 @@ import time
 from aiosmtpd.controller import Controller
 
 from app.db.session import worker_session
-from app.services import bounces
+from app.core.config import settings
+from app.services import bounces, mailbox
 
 log = logging.getLogger("bounce_server")
 MAX_SIZE = 2 * 1024 * 1024
@@ -27,7 +28,8 @@ class BounceHandler:
         if time.time() - self._loaded > 60:
             db = worker_session(system=True)
             try:
-                self._domains = bounces.bounce_domains(db)
+                self._domains = bounces.bounce_domains(db) | ({settings.INBOUND_DOMAIN.lower()}
+                                                               if settings.INBOUND_DOMAIN else set())
             finally:
                 db.close()
             self._loaded = time.time()
@@ -35,9 +37,12 @@ class BounceHandler:
 
     async def handle_RCPT(self, server, session, envelope, address, rcpt_options):
         local, _, domain = address.lower().rpartition("@")
-        if domain not in self.domains() or not local.startswith(bounces.LOCAL_PREFIX):
+        if domain not in self.domains():
             return "550 5.7.1 Relaying denied"
-        if bounces.parse_verp(address) is None:
+        if local.startswith(mailbox.REPLY_PREFIX + "+"):
+            if mailbox.parse_reply_address(address) is None:
+                return "550 5.1.1 No such mailbox"
+        elif not local.startswith(bounces.LOCAL_PREFIX) or bounces.parse_verp(address) is None:
             return "550 5.1.1 No such mailbox"
         envelope.rcpt_tos.append(address)
         return "250 OK"
@@ -55,7 +60,10 @@ class BounceHandler:
     def _apply(rcpt: str, raw: bytes) -> str:
         db = worker_session(system=True)
         try:
-            out = bounces.process(db, rcpt, raw)
+            if rcpt.lower().startswith(mailbox.REPLY_PREFIX + "+"):
+                out = mailbox.receive(db, rcpt, raw)
+            else:
+                out = bounces.process(db, rcpt, raw)
             db.commit()
             return out
         except Exception:

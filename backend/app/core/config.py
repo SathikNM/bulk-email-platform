@@ -13,7 +13,11 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     SECRET_KEY: str = "change-me-in-production-0123456789abcdef"
-    CREDENTIALS_ENCRYPTION_KEY: str = ""  # Fernet key; derived from SECRET_KEY if empty (dev only)
+    CREDENTIALS_ENCRYPTION_KEY: str = ""
+    # Reply capture: when set (e.g. news.primecfo.sa, whose MX points at this server), emails carry
+    # Reply-To: replies+<token>@<INBOUND_DOMAIN> so replies land in the platform's Inbox.
+    INBOUND_DOMAIN: str = ""
+    INBOUND_FORWARD_COPY: bool = True  # also forward each reply to the sending account's reply-to/from address  # Fernet key; derived from SECRET_KEY if empty (dev only)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 14
     COOKIE_SECURE: bool = False

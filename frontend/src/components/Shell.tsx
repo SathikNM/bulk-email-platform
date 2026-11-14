@@ -8,6 +8,7 @@ import {
   FileText,
   Filter,
   History,
+  Inbox,
   LayoutDashboard,
   LogOut,
   Mail,
@@ -21,7 +22,9 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useWsQuery } from "@/lib/hooks";
 
 export const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -32,6 +35,7 @@ export const NAV = [
   { href: "/templates", label: "Email Templates", icon: FileText },
   { href: "/campaigns/new", label: "Create Campaign", icon: Send },
   { href: "/campaigns", label: "Campaign History", icon: History, exact: true },
+  { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/sending-accounts", label: "Sending Accounts", icon: Mail },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -39,6 +43,7 @@ export const NAV = [
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
+  const unread = useWsQuery(["mailbox-summary"], () => api.get<{ unread: number }>("/mailbox/summary"), { refetchInterval: 30000 }).data?.unread ?? 0;
   const { me, workspaceId, switchWorkspace, logout, role } = useAuth();
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -52,6 +57,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <Link key={href} href={href} onClick={() => setOpen(false)} className={clsx("group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors", isActive(href, exact) ? "bg-white/10 text-white" : "text-brand-100 hover:bg-white/5 hover:text-white")}>
           <Icon className={clsx("h-4 w-4", isActive(href, exact) ? "text-white" : "text-brand-300 group-hover:text-white")} />
           {label}
+          {href === "/inbox" && unread > 0 && <span className="ms-auto rounded-full bg-accent-500 px-2 py-0.5 text-[11px] font-semibold text-white">{unread}</span>}
         </Link>
       ))}
     </nav>

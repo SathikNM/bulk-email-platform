@@ -28,7 +28,7 @@ from app.models.enums import EventType
 from app.models.enums import RecipientStatus as R
 from app.providers import AccountError, OutgoingEmail, PermanentError, TransientError, build_provider
 from app.providers.direct import HardBounce
-from app.services import rendering
+from app.services import mailbox, rendering
 from app.services.compliance import eligibility_clause
 
 log = logging.getLogger(__name__)
@@ -228,10 +228,15 @@ def send_batch(db: Session, campaign_id: uuid.UUID) -> dict:
             throttle(account)
             subject, html, text = personalise(c, rec, sender_address)
             unsub = unsubscribe_url(rec.id)
+            sent_row = mailbox.start_outbound(db, c.workspace_id, account, rec.email, subject, kind="campaign",
+                                              text=text, campaign_id=c.id, recipient_id=rec.id,
+                                              contact_id=rec.contact_id)
             msg = OutgoingEmail(
-                from_email=account.from_email, from_name=account.from_name, reply_to=account.reply_to, to=rec.email,
+                from_email=account.from_email, from_name=account.from_name,
+                reply_to=mailbox.reply_to_header(account, sent_row), to=rec.email,
                 subject=subject, html=html, text=text,
-                headers={"List-Unsubscribe": f"<{unsub}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                headers={"Message-ID": sent_row.message_id_hdr,
+                         "List-Unsubscribe": f"<{unsub}>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
                          "X-BEP-Campaign": str(c.id), "X-BEP-Recipient": str(rec.id),
                          "Feedback-ID": f"{c.id.hex[:12]}:{c.workspace_id.hex[:12]}:bep"},
                 tags={"campaign": c.id.hex, "recipient": rec.id.hex})
@@ -239,6 +244,7 @@ def send_batch(db: Session, campaign_id: uuid.UUID) -> dict:
                 mid = provider.send(msg)
             except TransientError as e:
                 release_daily(account)
+                db.delete(sent_row)  # a retry records its own Sent entry
                 if rec.attempts >= settings.SEND_MAX_ATTEMPTS:
                     rec.status, rec.last_error = R.FAILED, f"Gave up after {rec.attempts} attempts: {e}"[:500]
                     out["failed"] += 1
@@ -251,6 +257,7 @@ def send_batch(db: Session, campaign_id: uuid.UUID) -> dict:
                 db.commit()
                 continue
             except HardBounce as e:
+                mailbox.finish_outbound(sent_row, False, str(e))
                 rec.status, rec.last_error = R.BOUNCED, str(e)[:500]
                 _event(db, rec, EventType.BOUNCE_HARD, raw={"error": str(e)[:500]})
                 contact = db.get(Contact, rec.contact_id)
@@ -264,6 +271,7 @@ def send_batch(db: Session, campaign_id: uuid.UUID) -> dict:
                 continue
             except PermanentError as e:
                 release_daily(account)
+                mailbox.finish_outbound(sent_row, False, str(e))
                 rec.status, rec.last_error = R.FAILED, str(e)[:500]
                 _event(db, rec, EventType.REJECT, raw={"error": str(e)[:500]})
                 out["failed"] += 1
@@ -271,6 +279,7 @@ def send_batch(db: Session, campaign_id: uuid.UUID) -> dict:
                 continue
             except AccountError as e:
                 release_daily(account)
+                db.delete(sent_row)
                 rec.status, rec.attempts = R.QUEUED, rec.attempts - 1
                 for r2 in claimed[idx + 1:]:
                     r2.status, r2.attempts = R.QUEUED, r2.attempts - 1
@@ -278,6 +287,7 @@ def send_batch(db: Session, campaign_id: uuid.UUID) -> dict:
                 db.commit()
                 out["stop"] = True
                 return out
+            mailbox.finish_outbound(sent_row, True)
             rec.status, rec.provider_message_id, rec.sent_at = R.SENT, mid, datetime.now(timezone.utc)
             rec.next_attempt_at = None
             rec.last_error = None

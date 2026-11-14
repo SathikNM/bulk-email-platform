@@ -29,6 +29,7 @@ if [ ! -f "$ENV" ]; then
   $SUDO tee "$ENV" >/dev/null <<CONF
 DOMAIN=$DOMAIN
 HELO_HOSTNAME=$HELO
+INBOUND_DOMAIN=news.${HELO#mail.}
 SECRET_KEY=$(openssl rand -hex 32)
 CREDENTIALS_ENCRYPTION_KEY=$FERNET
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
@@ -40,6 +41,7 @@ CONF
   $SUDO chmod 600 "$ENV"
   echo "FIRST-RUN ADMIN LOGIN: $ADMIN_EMAIL / $ADMIN_PW  (change it and turn on two-factor sign-in)"
 else
+  $SUDO grep -q '^INBOUND_DOMAIN=' "$ENV" || echo "INBOUND_DOMAIN=news.${HELO#mail.}" | $SUDO tee -a "$ENV" >/dev/null
   $SUDO sed -i "s|^ADMIN_ALLOWED_CIDRS=.*|ADMIN_ALLOWED_CIDRS=$CIDRS|; s|^DOMAIN=.*|DOMAIN=$DOMAIN|; s|^HELO_HOSTNAME=.*|HELO_HOSTNAME=$HELO|" "$ENV"
 fi
 
