@@ -109,8 +109,12 @@ def update_account(account_id: uuid.UUID, body: AccountUpdate, ctx: Ctx = Admin)
     for k, v in data.items():
         setattr(a, k, v)
     if body.credentials is not None:
-        (SESCreds if a.provider == Provider.SES else SMTPCreds).model_validate(body.credentials)
-        a.encrypted_credentials = encrypt_json(body.credentials)
+        # Merge: fields left blank keep their stored value (secrets are never sent back to the
+        # browser, so an edit form cannot resend them).
+        merged = {**decrypt_json(a.encrypted_credentials),
+                  **{k: v for k, v in body.credentials.items() if v not in (None, "")}}
+        (SESCreds if a.provider == Provider.SES else SMTPCreds).model_validate(merged)
+        a.encrypted_credentials = encrypt_json(merged)
         a.verification_status = IdentityStatus.PENDING
     if body.is_default:
         _make_default(ctx, a)

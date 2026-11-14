@@ -141,3 +141,18 @@ def test_ai_assistant_disabled_without_key(api):
     assert api.get("/ai/status").json()["enabled"] is False
     r = api.post("/ai/generate", json={"kind": "subject", "context": "Launch of our FP&A advisory service"})
     assert r.status_code == 503
+
+
+def test_editing_account_keeps_saved_password(api, smtp_sink):
+    from app.core.security import decrypt_json
+    from app.db.session import system_scope
+    from app.models import SendingAccount
+    a = smtp_account(api, smtp_sink.port, credentials={"host": "127.0.0.1", "port": smtp_sink.port,
+                                                       "security": "none", "username": "u", "password": "Secret!"})
+    r = api.patch(f"/sending-accounts/{a['id']}", json={"credentials": {"host": "127.0.0.1", "port": smtp_sink.port,
+                                                                         "security": "none", "username": "u2",
+                                                                         "password": ""}})
+    assert r.status_code == 200 and r.json()["credentials_hint"]["password"] == "••••"
+    with system_scope() as s:
+        creds = decrypt_json(s.get(SendingAccount, a["id"]).encrypted_credentials)
+    assert creds["password"] == "Secret!" and creds["username"] == "u2"

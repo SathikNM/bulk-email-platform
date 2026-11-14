@@ -31,9 +31,15 @@ class SMTPProvider(EmailProvider):
                 if self.security == "starttls":
                     conn.starttls(context=ssl.create_default_context())
             if self.username:
-                conn.login(self.username, self.password or "")
+                try:
+                    conn.login(self.username, self.password or "")
+                except smtplib.SMTPServerDisconnected as e:
+                    raise AccountError(
+                        "The server closed the connection during sign-in: the username or password was "
+                        "rejected. Gmail and Microsoft 365 require an app password (Gmail: 16 letters, "
+                        "from myaccount.google.com/apppasswords), not your normal password.") from e
         except smtplib.SMTPAuthenticationError as e:
-            raise AccountError(f"SMTP authentication failed: {e.smtp_code}") from e
+            raise AccountError(f"SMTP sign-in rejected ({e.smtp_code}): check the username and (app) password") from e
         except (OSError, socket.timeout, smtplib.SMTPException) as e:
             raise TransientError(f"SMTP connection failed: {e}") from e
         self._conn = conn

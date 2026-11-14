@@ -90,14 +90,14 @@ function AccountForm({ open, account, onClose }: { open: boolean; account?: Send
   if (open && init !== key) {
     setInit(key);
     setF({ name: account?.name || "", provider: account?.provider || "ses", from_email: account?.from_email || "", from_name: account?.from_name || "", reply_to: account?.reply_to || "", region: account?.region || "me-central-1", configuration_set: account?.configuration_set || "", max_per_second: String(account?.max_per_second ?? 10), max_per_day: String(account?.max_per_day ?? 50000) });
-    setCreds(account?.provider === "smtp" ? { host: account.credentials_hint.host || "", port: account.credentials_hint.port || "587", security: account.credentials_hint.security || "starttls" } : { port: "587", security: "starttls" });
+    setCreds(account?.provider === "smtp" ? { host: account.credentials_hint.host || "", port: String(account.credentials_hint.port || "587"), username: account.credentials_hint.username || "", security: account.credentials_hint.security || "starttls" } : account?.provider === "ses" ? { access_key_id: account.credentials_hint.access_key_id || "" } : { port: "587", security: "starttls" });
   }
   if (!open && init !== null) setInit(null);
   const save = useAction(() => {
     const isSes = f.provider === "ses";
     const c = isSes ? (creds.access_key_id ? { access_key_id: creds.access_key_id, secret_access_key: creds.secret_access_key } : undefined) : { host: creds.host, port: Number(creds.port), username: creds.username || undefined, password: creds.password || undefined, security: creds.security };
     const body: Record<string, unknown> = { name: f.name, from_name: f.from_name || null, reply_to: f.reply_to || null, region: isSes ? f.region : null, configuration_set: f.configuration_set || null, max_per_second: Number(f.max_per_second), max_per_day: Number(f.max_per_day) };
-    if (c && (!account || Object.values(c).some(Boolean))) body.credentials = c;
+    if (c && Object.values(c).some(Boolean)) body.credentials = c; // server merges: blank fields keep saved values
     return account ? api.patch(`/sending-accounts/${account.id}`, body) : api.post("/sending-accounts", { ...body, provider: f.provider, from_email: f.from_email });
   }, { success: "Sending account saved", invalidate: [["sending-accounts"]], onSuccess: onClose });
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: e.target.value });
@@ -120,7 +120,7 @@ function AccountForm({ open, account, onClose }: { open: boolean; account?: Send
           {isSes ? (
             <div className="grid grid-cols-2 gap-3">
               <Field label="Access key ID"><input className="input" autoComplete="off" value={creds.access_key_id || ""} onChange={setc("access_key_id")} /></Field>
-              <Field label="Secret access key"><input className="input" type="password" autoComplete="new-password" value={creds.secret_access_key || ""} onChange={setc("secret_access_key")} /></Field>
+              <Field label="Secret access key"><input className="input" type="password" name="aws-secret" autoComplete="new-password" data-lpignore="true" readOnly onFocus={(e) => e.currentTarget.removeAttribute("readonly")} value={creds.secret_access_key || ""} onChange={setc("secret_access_key")} /></Field>
               <p className="col-span-2 text-xs text-slate-500">Leave empty to use the server&apos;s IAM role. The key needs ses:SendRawEmail, ses:GetEmailIdentity, ses:CreateEmailIdentity and ses:GetAccount.</p>
             </div>
           ) : (
@@ -128,7 +128,7 @@ function AccountForm({ open, account, onClose }: { open: boolean; account?: Send
               <Field label="SMTP host"><input className="input" value={creds.host || ""} onChange={setc("host")} /></Field>
               <Field label="Port"><input className="input" type="number" value={creds.port || ""} onChange={setc("port")} /></Field>
               <Field label="Username"><input className="input" autoComplete="off" value={creds.username || ""} onChange={setc("username")} /></Field>
-              <Field label="Password"><input className="input" type="password" autoComplete="new-password" value={creds.password || ""} onChange={setc("password")} /></Field>
+              <Field label="Password" hint={account?.credentials_hint.password ? "Leave blank to keep the saved password" : "Gmail: use a 16-letter app password"}><input className="input" type="password" name="smtp-app-secret" autoComplete="new-password" data-lpignore="true" readOnly onFocus={(e) => e.currentTarget.removeAttribute("readonly")} value={creds.password || ""} onChange={setc("password")} /></Field>
               <Field label="Security" className="col-span-2"><Select value={creds.security} onChange={(v) => setCreds({ ...creds, security: v })} options={[{ value: "starttls", label: "STARTTLS (587)" }, { value: "ssl", label: "SSL/TLS (465)" }, { value: "none", label: "None (local testing only)" }]} /></Field>
             </div>
           )}
