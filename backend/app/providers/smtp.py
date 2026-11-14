@@ -11,7 +11,7 @@ class SMTPProvider(EmailProvider):
 
     def __init__(self, host: str, port: int = 587, username: str | None = None, password: str | None = None,
                  security: str = "starttls", timeout: float = 20.0):
-        self.host, self.port, self.username, self.password = host, int(port), username, password
+        self.host, self.port, self.username, self.password = (host or "").strip(), int(port), (username or "").strip(), password
         self.security, self.timeout = security, timeout  # security: starttls | ssl | none
         self._conn: smtplib.SMTP | None = None
 
@@ -39,7 +39,8 @@ class SMTPProvider(EmailProvider):
                         "rejected. Gmail and Microsoft 365 require an app password (Gmail: 16 letters, "
                         "from myaccount.google.com/apppasswords), not your normal password.") from e
         except smtplib.SMTPAuthenticationError as e:
-            raise AccountError(f"SMTP sign-in rejected ({e.smtp_code}): check the username and (app) password") from e
+            detail = (e.smtp_error or b"").decode(errors="replace").split("[")[0].strip()
+            raise AccountError(f"SMTP sign-in rejected ({e.smtp_code}): {detail or 'check the username and (app) password'}") from e
         except (OSError, socket.timeout, smtplib.SMTPException) as e:
             raise TransientError(f"SMTP connection failed: {e}") from e
         self._conn = conn

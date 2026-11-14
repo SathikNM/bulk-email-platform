@@ -112,7 +112,8 @@ def update_account(account_id: uuid.UUID, body: AccountUpdate, ctx: Ctx = Admin)
         # Merge: fields left blank keep their stored value (secrets are never sent back to the
         # browser, so an edit form cannot resend them).
         merged = {**decrypt_json(a.encrypted_credentials),
-                  **{k: v for k, v in body.credentials.items() if v not in (None, "")}}
+                  **{k: (v.strip() if isinstance(v, str) and k != "password" else v)
+                     for k, v in body.credentials.items() if v not in (None, "")}}
         (SESCreds if a.provider == Provider.SES else SMTPCreds).model_validate(merged)
         a.encrypted_credentials = encrypt_json(merged)
         a.verification_status = IdentityStatus.PENDING
