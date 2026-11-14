@@ -81,8 +81,8 @@ export default function ContactsPage() {
                   {items.map((c) => (
                     <tr key={c.id} className={sel.includes(c.id) ? "bg-brand-50/50" : "hover:bg-slate-50"}>
                       <td className="td"><input type="checkbox" aria-label={`Select ${c.email}`} checked={sel.includes(c.id)} onChange={(e) => setSel(e.target.checked ? [...sel, c.id] : sel.filter((x) => x !== c.id))} /></td>
-                      <td className="td"><Link href={`/contacts/${c.id}`} className="font-medium text-slate-900 hover:text-brand-700">{fullName(c)}</Link><div className="text-xs text-slate-400">{c.code}</div></td>
-                      <td className="td"><Link href={`/companies/${c.company_id}`} className="hover:underline">{c.company_name}</Link></td>
+                      <td className="td"><Link href={`/contacts/${c.id}`} className="font-medium text-slate-900 hover:text-brand-700">{fullName(c)}</Link>{c.name_ar && <div dir="rtl" className="text-start text-xs text-slate-600">{c.name_ar}</div>}<div className="text-xs text-slate-400">{c.code}</div></td>
+                      <td className="td"><Link href={`/companies/${c.company_id}`} className="hover:underline">{c.company_name}</Link>{c.company_name_ar && <div dir="rtl" className="text-start text-xs text-slate-500">{c.company_name_ar}</div>}</td>
                       <td className="td">{c.job_title || "—"}{c.department && <div className="text-xs text-slate-400">{c.department}</div>}</td>
                       <td className="td">{c.email}{c.is_role_account && <Badge className="ms-1.5">role</Badge>}</td>
                       <td className="td"><StatusBadge status={c.subscription_status} /></td>

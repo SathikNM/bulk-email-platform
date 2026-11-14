@@ -8,7 +8,7 @@ import type { Company, Contact, Page } from "@/lib/types";
 import { Alert, Button, Drawer, Field, MultiSelect, Select } from "./ui";
 
 type Form = {
-  company_id: string; email: string; first_name: string; last_name: string; job_title: string; department: string;
+  company_id: string; email: string; first_name: string; last_name: string; name_ar: string; job_title: string; department: string;
   phone: string; country_code: string; city: string; category_id: string; notes: string; tag_ids: string[];
   consent_source: string; consent_date: string; lawful_basis: string;
 };
@@ -38,7 +38,7 @@ export function CompanyPicker({ value, onChange, initialLabel }: { value: string
 export function ContactForm({ open, onClose, contact, defaultCompany, onSaved }: { open: boolean; onClose: () => void; contact?: Contact | null; defaultCompany?: { id: string; name: string }; onSaved?: (c: Contact) => void }) {
   const tags = useTags();
   const cats = useCategories("contact");
-  const blank: Form = { company_id: defaultCompany?.id || "", email: "", first_name: "", last_name: "", job_title: "", department: "", phone: "", country_code: "", city: "", category_id: "", notes: "", tag_ids: [], consent_source: "", consent_date: "", lawful_basis: "explicit_consent" };
+  const blank: Form = { company_id: defaultCompany?.id || "", email: "", first_name: "", last_name: "", name_ar: "", job_title: "", department: "", phone: "", country_code: "", city: "", category_id: "", notes: "", tag_ids: [], consent_source: "", consent_date: "", lawful_basis: "explicit_consent" };
   const [f, setF] = useState<Form>(blank);
   const [companyName, setCompanyName] = useState(defaultCompany?.name || "");
   const [emailCheck, setEmailCheck] = useState<{ exists: boolean; suppressed: string | null; role_account: boolean } | null>(null);
@@ -60,7 +60,7 @@ export function ContactForm({ open, onClose, contact, defaultCompany, onSaved }:
 
   const save = useAction(() => {
     const nul = (v: string) => v || null;
-    const base = { company_id: f.company_id, email: f.email, first_name: nul(f.first_name), last_name: nul(f.last_name), job_title: nul(f.job_title), department: nul(f.department), phone: nul(f.phone), country_code: nul(f.country_code), city: nul(f.city), category_id: nul(f.category_id), notes: nul(f.notes), tag_ids: f.tag_ids };
+    const base = { company_id: f.company_id, email: f.email, first_name: nul(f.first_name), last_name: nul(f.last_name), name_ar: nul(f.name_ar), job_title: nul(f.job_title), department: nul(f.department), phone: nul(f.phone), country_code: nul(f.country_code), city: nul(f.city), category_id: nul(f.category_id), notes: nul(f.notes), tag_ids: f.tag_ids };
     return contact
       ? api.patch<Contact>(`/contacts/${contact.id}`, base)
       : api.post<Contact>("/contacts", { ...base, consent_source: nul(f.consent_source), consent_date: f.consent_date ? new Date(f.consent_date).toISOString() : null, lawful_basis: f.lawful_basis });
@@ -75,6 +75,7 @@ export function ContactForm({ open, onClose, contact, defaultCompany, onSaved }:
         <Field label="Company *" className="col-span-2"><CompanyPicker value={f.company_id} initialLabel={companyName} onChange={(id) => set("company_id")(id)} /></Field>
         <Field label="First name">{inp("first_name")}</Field>
         <Field label="Last name">{inp("last_name")}</Field>
+        <Field label="Full name (Arabic)" className="col-span-2">{inp("name_ar", { dir: "rtl", placeholder: "الاسم بالعربي" })}</Field>
         <Field label="Business email *" className="col-span-2">{inp("email", { type: "email" })}</Field>
         {emailCheck?.exists && <div className="col-span-2"><Alert tone="red">A contact with this email already exists.</Alert></div>}
         {emailCheck?.suppressed && <div className="col-span-2"><Alert tone="amber">This address is on the suppression list ({emailCheck.suppressed}). It will be saved as unsubscribed.</Alert></div>}

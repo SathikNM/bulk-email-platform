@@ -36,7 +36,7 @@ export function CompanyForm({ open, onClose, company, onSaved }: { open: boolean
   const save = useAction(
     () => {
       const body = {
-        name: f.name, industry_id: f.industry_id || null, business_type: f.business_type || null, country_code: f.country_code || null,
+        name: f.name, name_ar: f.name_ar || null, industry_id: f.industry_id || null, business_type: f.business_type || null, country_code: f.country_code || null,
         city: f.city || null, website: f.website || null, company_size: f.company_size || null, annual_revenue: f.annual_revenue || null,
         status: f.status, data_source: f.data_source || null, notes: f.notes || null, tag_ids: f.tag_ids, category_ids: f.category_ids,
       };
@@ -54,6 +54,7 @@ export function CompanyForm({ open, onClose, company, onSaved }: { open: boolean
     <Drawer open={open} onClose={onClose} title={company ? `Edit ${company.name}` : "Add company"} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={save.isPending} onClick={() => save.mutate(undefined)} disabled={!String(f.name || "").trim()}>Save</Button></>}>
       <div className="grid grid-cols-2 gap-4">
         <Field label="Company name *" className="col-span-2">{inp("name", { autoFocus: true })}</Field>
+        <Field label="Company name (Arabic)" className="col-span-2">{inp("name_ar", { dir: "rtl", placeholder: "اسم الشركة بالعربي" })}</Field>
         {dups.length > 0 && (
           <div className="col-span-2"><Alert tone="amber" title="Possible duplicate">{dups.map((d) => `${d.name}${d.same_domain ? " (same website)" : ` (${Math.round(d.score * 100)}% similar)`}`).join("\n")}</Alert></div>
         )}

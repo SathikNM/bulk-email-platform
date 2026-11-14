@@ -66,6 +66,7 @@ export default function CompaniesPage() {
                     <tr key={c.id} className="hover:bg-slate-50">
                       <td className="td">
                         <Link href={`/companies/${c.id}`} className="font-medium text-slate-900 hover:text-brand-700">{c.name}</Link>
+                        {c.name_ar && <div dir="rtl" className="text-start text-xs text-slate-500">{c.name_ar}</div>}
                         <div className="text-xs text-slate-400">{c.code}{c.domain && ` · ${c.domain}`}</div>
                       </td>
                       <td className="td">{c.industry || "—"}</td>

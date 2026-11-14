@@ -87,6 +87,7 @@ class Company(UUIDPk, Timestamps, SoftDelete, Base):
         server_default=sa.text("'COMP-' || lpad(nextval('company_code_seq')::text, 6, '0')"),
     )
     name: Mapped[str] = mapped_column(sa.String(255), nullable=False)
+    name_ar: Mapped[str | None] = mapped_column(sa.String(255))  # Arabic company name
     # Lower-cased name without spaces/punctuation (keeps Arabic letters) for duplicate detection.
     normalized_name: Mapped[str] = mapped_column(
         sa.Text,
@@ -171,6 +172,7 @@ class Contact(UUIDPk, Timestamps, SoftDelete, Base):
     )
     first_name: Mapped[str | None] = mapped_column(sa.String(120))
     last_name: Mapped[str | None] = mapped_column(sa.String(120))
+    name_ar: Mapped[str | None] = mapped_column(sa.String(200))  # full name in Arabic
     job_title: Mapped[str | None] = mapped_column(sa.String(200))
     department: Mapped[str | None] = mapped_column(sa.String(120))
     email: Mapped[str] = mapped_column(CITEXT, nullable=False)

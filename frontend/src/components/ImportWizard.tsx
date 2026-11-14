@@ -11,7 +11,7 @@ type Preview = { headers: string[]; rows: Record<string, string | null>[]; total
 type Job = { id: string; status: string; total_rows: number; inserted: number; updated: number; skipped: number; errors: { row: number; error: string }[]; options: Record<string, unknown> };
 
 const LABEL: Record<string, string> = {
-  name: "Company name", company_name: "Company name", company_website: "Company website", full_name: "Full name",
+  name: "Company name", name_ar: "Name (Arabic)", company_name_ar: "Company name (Arabic)", company_name: "Company name", company_website: "Company website", full_name: "Full name",
   consent_source: "Consent source", consent_date: "Consent date (YYYY-MM-DD)", subscription_status: "Subscription status",
 };
 const label = (f: string) => LABEL[f] || f.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());

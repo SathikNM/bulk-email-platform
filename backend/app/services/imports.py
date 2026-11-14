@@ -46,11 +46,12 @@ BATCH = 500
 MAX_ERRORS = 1000
 
 FIELDS: dict[ImportEntity, list[str]] = {
-    ImportEntity.COMPANY: ["name", "industry", "business_type", "country", "city", "website",
+    ImportEntity.COMPANY: ["name", "name_ar", "industry", "business_type", "country", "city", "website",
                            "company_size", "annual_revenue", "category", "status", "data_source",
                            "notes", "tags"],
-    ImportEntity.CONTACT: ["email", "first_name", "last_name", "full_name", "job_title", "department",
-                           "phone", "country", "city", "company_name", "company_website", "category",
+    ImportEntity.CONTACT: ["email", "first_name", "last_name", "full_name", "name_ar", "job_title", "department",
+                           "phone", "country", "city", "company_name", "company_name_ar", "company_website",
+                           "category",
                            "consent_source", "consent_date", "subscription_status", "notes", "tags"],
     ImportEntity.SUPPRESSION: ["email", "reason"],
 }
@@ -58,14 +59,20 @@ REQUIRED = {ImportEntity.COMPANY: ["name"], ImportEntity.CONTACT: ["email"],
             ImportEntity.SUPPRESSION: ["email"]}
 
 ALIASES = {
-    "name": ["company name", "company", "organisation", "organization", "account name"],
+    "name": ["company name", "company", "organisation", "organization", "account name",
+             "company name english", "company name (english)", "company english", "company name en"],
+    "name_ar": ["arabic name", "name arabic", "name (arabic)", "name ar", "full name arabic",
+                "full name (arabic)", "contact name arabic", "الاسم", "اسم", "الاسم بالعربي", "الاسم بالعربية"],
+    "company_name_ar": ["company name arabic", "company name (arabic)", "company arabic", "company name ar",
+                        "arabic company name", "اسم الشركة", "الشركة", "اسم الشركة بالعربي"],
     "company_name": ["company", "company name", "organisation", "organization", "account"],
     "company_website": ["company website", "company domain", "domain"],
     "website": ["url", "web", "web site", "domain"],
     "email": ["email address", "e-mail", "business email", "work email", "mail"],
     "first_name": ["first", "firstname", "given name"],
     "last_name": ["last", "lastname", "surname", "family name"],
-    "full_name": ["name", "contact name", "full name"],
+    "full_name": ["name", "contact name", "full name", "name english", "name (english)", "full name english",
+                  "full name (english)", "name en"],
     "job_title": ["title", "position", "designation", "role", "job"],
     "department": ["dept", "function", "division"],
     "phone": ["mobile", "telephone", "tel", "phone number", "contact number"],
@@ -90,11 +97,14 @@ def suggest_mapping(headers: list[str], entity: ImportEntity) -> dict[str, str |
     fields = FIELDS[entity]
     out: dict[str, str | None] = {}
     used: set[str] = set()
+    aliases = dict(ALIASES)
+    if entity == ImportEntity.COMPANY:  # in a company file the Arabic name is the company's
+        aliases["name_ar"] = ALIASES["company_name_ar"] + ["arabic name", "name arabic", "name (arabic)", "name ar"]
     for h in headers:
         n = _norm(h)
         match = next((f for f in fields if f not in used and _norm(f) == n), None)
         if match is None:
-            match = next((f for f in fields if f not in used and n in ALIASES.get(f, [])), None)
+            match = next((f for f in fields if f not in used and n in aliases.get(f, [])), None)
         if match:
             used.add(match)
         out[h] = match
@@ -165,6 +175,9 @@ def _cell(v) -> str | None:
     if isinstance(v, (datetime, date)):
         return v.isoformat()
     s = str(v).strip()
+    # A dash (or N/A) in the sheet means "no value" for that column.
+    if s in ("-", "–", "—", "--") or s.lower() in ("n/a", "na", "null", "none"):
+        return None
     return s or None
 
 
@@ -175,7 +188,9 @@ def _parse_date(v) -> datetime | None:
         return v if v.tzinfo else v.replace(tzinfo=timezone.utc)
     if isinstance(v, date):
         return datetime(v.year, v.month, v.day, tzinfo=timezone.utc)
-    s = str(v).strip()
+    s = _cell(v)
+    if s is None:
+        return None
     for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y", "%m/%d/%Y",
                 "%d-%m-%Y", "%d.%m.%Y"):
         try:
@@ -286,6 +301,9 @@ def _upsert_company(db: Session, lk: _Lookup, r: dict, update_existing: bool,
             Company.normalized_name == sa.func.lower(sa.func.regexp_replace(
                 name, "[[:space:][:punct:]]+", "", "g")), Company.deleted_at.is_(None)).limit(1))
     values = {"name": name[:255]}
+    name_ar = _cell(r.get("name_ar") or r.get("company_name_ar"))
+    if name_ar:
+        values["name_ar"] = name_ar[:255]
     if website:
         values["website"], values["domain"] = website[:255], domain
     if "industry" in r and _cell(r["industry"]):
@@ -312,6 +330,8 @@ def _upsert_company(db: Session, lk: _Lookup, r: dict, update_existing: bool,
             raise ValueError(f"Invalid status '{r['status']}'") from None
     if existing is not None:
         if not update_existing:
+            if name_ar and not existing.name_ar:
+                existing.name_ar = name_ar[:255]
             return existing, "skipped"
         for k, v in values.items():
             setattr(existing, k, v)
@@ -347,7 +367,8 @@ def _upsert_contact(db: Session, lk: _Lookup, r: dict, opts: dict, suppressed: s
                 raise ValueError("Company name (or company website) is required")
     else:
         company, _ = _upsert_company(db, lk, {"name": company_name or company_site,
-                                              "website": company_site}, update_existing=False,
+                                              "website": company_site,
+                                              "name_ar": _cell(r.get("company_name_ar"))}, update_existing=False,
                                      created_by=created_by)
     first, last = _cell(r.get("first_name")), _cell(r.get("last_name"))
     if not first and not last and _cell(r.get("full_name")):
@@ -357,6 +378,8 @@ def _upsert_contact(db: Session, lk: _Lookup, r: dict, opts: dict, suppressed: s
     for f, v in (("first_name", first), ("last_name", last)):
         if v:
             values[f] = v[:120]
+    if _cell(r.get("name_ar")):
+        values["name_ar"] = _cell(r["name_ar"])[:200]
     for f in ("job_title", "department", "phone", "city", "notes"):
         if _cell(r.get(f)):
             values[f] = _cell(r[f])

@@ -17,23 +17,26 @@ VARIABLES = {
     "FirstName": "first_name", "LastName": "last_name", "FullName": "full_name",
     "CompanyName": "company_name", "JobTitle": "job_title", "Email": "email",
     "Department": "department", "City": "city", "Country": "country_code",
+    "FullNameAr": "full_name_ar", "CompanyNameAr": "company_name_ar",
 }
 SYSTEM_VARIABLES = {"UnsubscribeUrl", "ViewInBrowserUrl", "SenderAddress", "CurrentYear"}
 VAR_RE = re.compile(r"\{\{\s*([A-Za-z][A-Za-z0-9_]*)\s*(?:\|\s*([^}]*?))?\s*\}\}")
 
 SAMPLE = {"first_name": "Sara", "last_name": "Al-Qahtani", "full_name": "Sara Al-Qahtani",
           "company_name": "Acme Construction", "job_title": "Chief Financial Officer",
-          "email": "sara@example.com", "department": "Finance", "city": "Riyadh", "country_code": "SA"}
+          "email": "sara@example.com", "department": "Finance", "city": "Riyadh", "country_code": "SA",
+          "full_name_ar": "سارة القحطاني", "company_name_ar": "شركة أكمي للمقاولات"}
 
 BLOCKED_TAGS = {"script", "iframe", "object", "embed", "form", "input", "button", "textarea", "select",
                 "frame", "frameset", "applet", "base", "meta-refresh"}
 
 
-def merge_data_for(contact, company_name: str | None) -> dict:
+def merge_data_for(contact, company_name: str | None, company_name_ar: str | None = None) -> dict:
     full = " ".join(x for x in (contact.first_name, contact.last_name) if x) or None
     return {"first_name": contact.first_name, "last_name": contact.last_name, "full_name": full,
             "company_name": company_name, "job_title": contact.job_title, "email": contact.email,
-            "department": contact.department, "city": contact.city, "country_code": contact.country_code}
+            "department": contact.department, "city": contact.city, "country_code": contact.country_code,
+            "full_name_ar": getattr(contact, "name_ar", None), "company_name_ar": company_name_ar}
 
 
 def find_variables(*texts: str | None) -> tuple[set[str], set[str]]:

@@ -18,6 +18,7 @@ export type Company = {
   id: string;
   code: string;
   name: string;
+  name_ar?: string | null;
   industry_id: string | null;
   industry: string | null;
   business_type: string | null;
@@ -47,6 +48,8 @@ export type Contact = {
   first_name: string | null;
   last_name: string | null;
   full_name: string | null;
+  name_ar?: string | null;
+  company_name_ar?: string | null;
   job_title: string | null;
   department: string | null;
   email: string;

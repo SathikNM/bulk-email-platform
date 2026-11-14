@@ -152,9 +152,12 @@ class DirectProvider(EmailProvider):
         while True:
             sec = int(time.time())
             key = f"rate:direct:{self.domain}:{group}:{sec}"
-            n = r.incr(key)
-            if n == 1:
-                r.expire(key, 3)
+            try:
+                n = r.incr(key)
+                if n == 1:
+                    r.expire(key, 3)
+            except Exception:  # noqa: BLE001 - pacing is best-effort; never block delivery on Redis
+                return
             if n <= self.rate_per_group:
                 return
             time.sleep(max(0.0, sec + 1 - time.time()) + 0.01)

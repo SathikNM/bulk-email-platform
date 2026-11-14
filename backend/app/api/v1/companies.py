@@ -31,6 +31,7 @@ router = APIRouter(prefix="/companies", tags=["companies"])
 
 class CompanyIn(BaseModel):
     name: str = Field(min_length=1, max_length=255)
+    name_ar: str | None = Field(default=None, max_length=255)
     industry_id: uuid.UUID | None = None
     business_type: str | None = Field(default=None, max_length=120)
     country_code: str | None = Field(default=None, pattern=r"^[A-Za-z]{2}$")
@@ -107,7 +108,7 @@ def _filtered(q, industry_id, country_code, city, company_size, status, tag_id, 
     if q:
         like = f"%{q.strip()}%"
         stmt = stmt.where(sa.or_(Company.name.ilike(like), Company.domain.ilike(like),
-                                 Company.code.ilike(like), Company.city.ilike(like)))
+                                 Company.code.ilike(like), Company.city.ilike(like), Company.name_ar.ilike(like)))
     if industry_id:
         stmt = stmt.where(Company.industry_id.in_(industry_id))
     if country_code:
@@ -168,7 +169,8 @@ def export_companies(ctx: Ctx = Analyst, format: str = Query("csv", pattern="^(c
         d["categories"] = [t["name"] for t in d["categories"]]
         rows.append(d)
     audit(ctx, "export", "company", after={"rows": len(rows), "format": format})
-    cols = [("code", "Company ID"), ("name", "Company Name"), ("industry", "Industry"),
+    cols = [("code", "Company ID"), ("name", "Company Name"), ("name_ar", "Company Name (Arabic)"),
+            ("industry", "Industry"),
             ("business_type", "Business Type"), ("country_code", "Country"), ("city", "City"),
             ("website", "Website"), ("company_size", "Company Size"), ("annual_revenue", "Annual Revenue"),
             ("categories", "Categories"), ("tags", "Tags"), ("status", "Status"),

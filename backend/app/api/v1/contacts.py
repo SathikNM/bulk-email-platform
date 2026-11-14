@@ -36,6 +36,7 @@ class ContactIn(BaseModel):
     email: EmailStr
     first_name: str | None = Field(default=None, max_length=120)
     last_name: str | None = Field(default=None, max_length=120)
+    name_ar: str | None = Field(default=None, max_length=200)
     job_title: str | None = Field(default=None, max_length=200)
     department: str | None = Field(default=None, max_length=120)
     phone: str | None = Field(default=None, max_length=40)
@@ -60,6 +61,7 @@ class ContactUpdate(BaseModel):
     email: EmailStr | None = None
     first_name: str | None = Field(default=None, max_length=120)
     last_name: str | None = Field(default=None, max_length=120)
+    name_ar: str | None = Field(default=None, max_length=200)
     job_title: str | None = Field(default=None, max_length=200)
     department: str | None = Field(default=None, max_length=120)
     phone: str | None = Field(default=None, max_length=40)
@@ -112,10 +114,10 @@ class VerifyIn(BaseModel):
 
 def _out(ctx: Ctx, c: Contact, detail: bool = False) -> dict:
     d = row_dict(c)
-    comp = ctx.db.execute(sa.select(Company.name, Company.code, Industry.name)
+    comp = ctx.db.execute(sa.select(Company.name, Company.code, Industry.name, Company.name_ar)
                           .outerjoin(Industry, Industry.id == Company.industry_id)
                           .where(Company.id == c.company_id)).first()
-    d["company_name"], d["company_code"], d["industry"] = comp if comp else (None, None, None)
+    d["company_name"], d["company_code"], d["industry"], d["company_name_ar"] = comp if comp else (None,) * 4
     d["full_name"] = " ".join(x for x in (c.first_name, c.last_name) if x) or None
     d["category"] = ctx.db.scalar(sa.select(Category.name).where(Category.id == c.category_id)) \
         if c.category_id else None
@@ -138,7 +140,8 @@ def _filtered(q, company_id, department, job_title, subscription_status, verific
         like = f"%{q.strip()}%"
         full = sa.func.concat_ws(" ", Contact.first_name, Contact.last_name)
         stmt = stmt.where(sa.or_(full.ilike(like), Contact.email.ilike(like), Contact.job_title.ilike(like),
-                                 Company.name.ilike(like), Contact.code.ilike(like)))
+                                 Company.name.ilike(like), Contact.code.ilike(like), Contact.name_ar.ilike(like),
+                                 Company.name_ar.ilike(like)))
     if company_id:
         stmt = stmt.where(Contact.company_id.in_(company_id))
     if department:
@@ -202,7 +205,8 @@ def export_contacts(ctx: Ctx = Analyst, format: str = Query("csv", pattern="^(cs
         rows.append(d)
     audit(ctx, "export", "contact", after={"rows": len(rows), "format": format})
     cols = [("code", "Contact ID"), ("company_code", "Company ID"), ("company_name", "Company"),
-            ("first_name", "First Name"), ("last_name", "Last Name"), ("job_title", "Job Title"),
+            ("company_name_ar", "Company (Arabic)"), ("first_name", "First Name"), ("last_name", "Last Name"),
+            ("name_ar", "Name (Arabic)"), ("job_title", "Job Title"),
             ("department", "Department"), ("email", "Business Email"), ("phone", "Phone"),
             ("country_code", "Country"), ("city", "City"), ("category", "Contact Category"),
             ("subscription_status", "Subscription Status"), ("consent_source", "Consent Source"),
@@ -363,7 +367,7 @@ def erase(contact_id: uuid.UUID, ctx: Ctx = Owner):
     unsubscribe_contact(ctx.db, ctx.workspace_id, c, SuppressionReason.MANUAL, "erasure request", ctx.user.id)
     original = c.email
     anon = f"erased-{c.id.hex[:12]}@erased.invalid"
-    for f in ("first_name", "last_name", "job_title", "department", "phone", "city", "notes",
+    for f in ("first_name", "last_name", "name_ar", "job_title", "department", "phone", "city", "notes",
               "consent_source"):
         setattr(c, f, None)
     c.email = anon

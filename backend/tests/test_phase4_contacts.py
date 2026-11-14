@@ -167,3 +167,26 @@ def test_verification_dns_when_network_available():
     if status is None:
         pytest.skip("DNS not reachable from this environment")
     assert status == VerificationStatus.INVALID
+
+
+def test_import_arabic_names_and_dash_as_empty(api):
+    csv_data = (
+        "Email,Full Name,Name (Arabic),Company Name,Company Name (Arabic),Phone,Job Title,Consent Source,Consent Date\n"
+        "ahmed@alfaisal.sa,Ahmed Al Harbi,أحمد الحربي,Al Faisal Holding,شركة الفيصل القابضة,-,CFO,Client meeting,2026-10-15\n"
+        "sara@alfaisal.sa,Sara Saleh,-,Al Faisal Holding,-,+966 50 123 4567,-,-,-\n"
+    ).encode("utf-8")
+    files = {"file": ("contacts.csv", csv_data, "text/csv")}
+    pv = api.post("/imports/preview", data={"entity": "contact"}, files=files).json()
+    m = pv["suggested_mapping"]
+    assert m["Name (Arabic)"] == "name_ar" and m["Company Name (Arabic)"] == "company_name_ar"
+    assert m["Full Name"] == "full_name" and m["Company Name"] == "company_name"
+    r = api.post("/imports", data={"entity": "contact", "column_mapping": json.dumps(m)}, files=files)
+    job = api.get(f"/imports/{r.json()['id']}").json()
+    assert job["status"] == "completed" and job["inserted"] == 2, (job["errors"], job["inserted"], job.get("updated"), job["skipped"])
+    by = {c["email"]: c for c in api.get("/contacts?page_size=50").json()["items"]}
+    a, s = by["ahmed@alfaisal.sa"], by["sara@alfaisal.sa"]
+    assert a["name_ar"] == "أحمد الحربي" and a["company_name_ar"] == "شركة الفيصل القابضة"
+    assert a["phone"] is None and a["first_name"] == "Ahmed" and a["subscription_status"] == "subscribed"
+    assert s["name_ar"] is None and s["job_title"] is None and s["subscription_status"] == "pending"
+    assert api.get("/contacts", params={"q": "الحربي"}).json()["total"] == 1
+    assert api.get("/companies", params={"q": "الفيصل"}).json()["total"] == 1

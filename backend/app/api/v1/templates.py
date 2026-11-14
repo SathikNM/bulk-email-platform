@@ -77,7 +77,8 @@ def render_template(ctx: Ctx, html: str | None, subject: str | None, preheader: 
     data = dict(rendering.SAMPLE)
     if contact_id:
         c = get_or_404(ctx.db, Contact, contact_id, "Contact")
-        data = rendering.merge_data_for(c, ctx.db.scalar(sa.select(Company.name).where(Company.id == c.company_id)))
+        co = ctx.db.get(Company, c.company_id)
+        data = rendering.merge_data_for(c, co.name if co else None, co.name_ar if co else None)
     known, unknown = rendering.find_variables(html, subject, text_body, preheader)
     prepared = rendering.prepare_template_html(html or "", direction.value, locale,
                                                rendering.substitute(preheader, data, {}, escape=False),

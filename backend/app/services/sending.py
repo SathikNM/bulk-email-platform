@@ -115,12 +115,13 @@ def snapshot_recipients(db: Session, c: Campaign) -> int:
     stmt = build_audience(db, c, eligible_only=True)
     if stmt is None:
         return 0
-    rows = db.execute(stmt.with_only_columns(Contact, Company.name).order_by(Contact.created_at)).all()
+    rows = db.execute(stmt.with_only_columns(Contact, Company.name, Company.name_ar)
+                      .order_by(Contact.created_at)).all()
     inserted = 0
-    for contact, company_name in rows:
+    for contact, company_name, company_name_ar in rows:
         res = db.execute(pg_insert(CampaignRecipient.__table__).values(
             workspace_id=c.workspace_id, campaign_id=c.id, contact_id=contact.id, email=contact.email,
-            merge_data=rendering.merge_data_for(contact, company_name)).on_conflict_do_nothing()
+            merge_data=rendering.merge_data_for(contact, company_name, company_name_ar)).on_conflict_do_nothing()
             .returning(CampaignRecipient.__table__.c.id))
         inserted += 1 if res.first() is not None else 0
     c.total_recipients = db.scalar(sa.select(sa.func.count()).select_from(CampaignRecipient)
