@@ -63,6 +63,8 @@ services:
 
   migrate:
     profiles: ["app"]
+    healthcheck:
+      disable: true  # image HEALTHCHECK probes the API port, which this service does not serve
     build: ../backend
     environment: *app-env
     command: sh -c "python -m alembic upgrade head && python -m app.db.seed"
@@ -83,6 +85,8 @@ services:
 
   worker:
     profiles: ["app"]
+    healthcheck:
+      disable: true  # image HEALTHCHECK probes the API port, which this service does not serve
     build: ../backend
     restart: unless-stopped
     environment: *app-env
@@ -94,6 +98,8 @@ services:
 
   beat:
     profiles: ["app"]
+    healthcheck:
+      disable: true  # image HEALTHCHECK probes the API port, which this service does not serve
     build: ../backend
     restart: unless-stopped
     environment: *app-env
