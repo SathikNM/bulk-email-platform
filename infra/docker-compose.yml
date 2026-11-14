@@ -3,6 +3,7 @@ name: bulk-email-platform
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: bep
       POSTGRES_PASSWORD: bep
@@ -16,12 +17,14 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports: ["6379:6379"]
 
   s3:
     # S3-compatible object storage for images and import files (local dev).
     # MinIO's public images were withdrawn in 2025-26, so SeaweedFS is used instead.
     image: chrislusf/seaweedfs:latest
+    restart: unless-stopped
     command: server -s3 -dir=/data -ip.bind=0.0.0.0
     ports: ["8333:8333"]
     volumes: [s3data:/data]
@@ -29,6 +32,7 @@ services:
   mailpit:
     # Local SMTP capture for test sends. NOT real delivery.
     image: axllent/mailpit:latest
+    restart: unless-stopped
     ports: ["1025:1025", "8025:8025"]
 
 volumes:
