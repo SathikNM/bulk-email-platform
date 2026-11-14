@@ -75,6 +75,7 @@ export default function ContactsPage() {
                   <th className="th cursor-pointer" onClick={() => sortBy("company")}>Company{arrow("company")}</th>
                   <th className="th cursor-pointer" onClick={() => sortBy("job_title")}>Position{arrow("job_title")}</th>
                   <th className="th cursor-pointer" onClick={() => sortBy("email")}>Email{arrow("email")}</th>
+                  <th className="th">Phone</th>
                   <th className="th">Subscription</th><th className="th">Email check</th><th className="th">Tags</th>
                 </tr></thead>
                 <tbody>
@@ -85,6 +86,7 @@ export default function ContactsPage() {
                       <td className="td"><Link href={`/companies/${c.company_id}`} className="hover:underline">{c.company_name}</Link>{c.company_name_ar && <div dir="rtl" className="text-start text-xs text-slate-500">{c.company_name_ar}</div>}</td>
                       <td className="td">{c.job_title || "—"}{c.department && <div className="text-xs text-slate-400">{c.department}</div>}</td>
                       <td className="td">{c.email}{c.is_role_account && <Badge className="ms-1.5">role</Badge>}</td>
+                      <td className="td whitespace-nowrap" dir="ltr">{c.phone ? <a className="hover:text-brand-700" href={`tel:${c.phone.replace(/\s/g, "")}`}>{c.phone}</a> : "—"}</td>
                       <td className="td"><StatusBadge status={c.subscription_status} /></td>
                       <td className="td"><StatusBadge status={c.email_verification_status} /></td>
                       <td className="td"><div className="flex max-w-[180px] flex-wrap gap-1">{c.tags.slice(0, 2).map((t) => <Badge key={t.id} tone="brand">{t.name}</Badge>)}{c.tags.length > 2 && <Badge>+{c.tags.length - 2}</Badge>}</div></td>

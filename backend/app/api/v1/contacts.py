@@ -141,7 +141,8 @@ def _filtered(q, company_id, department, job_title, subscription_status, verific
         full = sa.func.concat_ws(" ", Contact.first_name, Contact.last_name)
         stmt = stmt.where(sa.or_(full.ilike(like), Contact.email.ilike(like), Contact.job_title.ilike(like),
                                  Company.name.ilike(like), Contact.code.ilike(like), Contact.name_ar.ilike(like),
-                                 Company.name_ar.ilike(like)))
+                                 Company.name_ar.ilike(like),
+                                 sa.func.replace(Contact.phone, ' ', '').ilike(f"%{q.replace(' ', '').strip()}%")))
     if company_id:
         stmt = stmt.where(Contact.company_id.in_(company_id))
     if department:
