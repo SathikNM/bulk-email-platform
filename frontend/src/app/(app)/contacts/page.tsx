@@ -3,6 +3,7 @@
 import { BadgeCheck, Download, Plus, Tag, Trash2, Upload, UserX } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { ColumnFilter } from "@/components/ColumnFilter";
 import { ContactForm } from "@/components/ContactForm";
 import { ImportWizard } from "@/components/ImportWizard";
 import { Badge, Button, Confirm, Empty, ErrorState, Loading, Modal, MultiSelect, PageHeader, Pagination, SearchInput, Select, StatusBadge } from "@/components/ui";
@@ -18,6 +19,9 @@ export default function ContactsPage() {
   const [page, setPage] = useState(1);
   const [sort, setSort] = useState("-created_at");
   const [flt, setFlt] = useState<Record<string, string[]>>({ department: [], job_title: [], subscription_status: [], verification: [], category_id: [], tag_id: [], industry_id: [] });
+  const [cols, setCols] = useState<{ f_name: string; f_company: string; f_position: string; f_email: string; f_phone: string; has_phone: boolean | null }>({ f_name: "", f_company: "", f_position: "", f_email: "", f_phone: "", has_phone: null });
+  const setCol = (k: keyof typeof cols) => (v: string | boolean | null) => { setCols({ ...cols, [k]: v }); setPage(1); };
+  const colQuery = Object.fromEntries(Object.entries(cols).filter(([, v]) => v !== "" && v !== null)) as Record<string, string>;
   const [sel, setSel] = useState<string[]>([]);
   const [edit, setEdit] = useState<Contact | null | undefined>(undefined);
   const [imp, setImp] = useState(false);
@@ -26,20 +30,18 @@ export default function ContactsPage() {
   const tags = useTags();
   const cats = useCategories("contact");
   const inds = useIndustries();
-  const query = { q, page, page_size: 25, sort, ...flt };
+  const query = { q, page, page_size: 25, sort, ...flt, ...colQuery };
   const list = useWsQuery(["contacts", query], () => api.get<Page<Contact>>("/contacts", query));
   const setFilter = (k: string) => (v: string[]) => { setFlt({ ...flt, [k]: v }); setPage(1); };
   const items = list.data?.items || [];
   const allSel = items.length > 0 && items.every((c) => sel.includes(c.id));
   const verify = useAction((ids: string[] | null) => api.post<{ queued: number }>("/contacts/verify", { contact_ids: ids }), { success: (r) => `Verification queued for ${r.queued} contact(s)`, invalidate: [["contacts"]] });
-  const sortBy = (k: string) => setSort(sort === k ? `-${k}` : k);
-  const arrow = (k: string) => (sort === k ? " ↑" : sort === `-${k}` ? " ↓" : "");
 
   return (
     <>
       <PageHeader title="Contacts" subtitle="People at your companies, with consent and subscription status." actions={<>
         {can("marketer") && <Button icon={<BadgeCheck className="h-4 w-4" />} loading={verify.isPending} onClick={() => verify.mutate(sel.length ? sel : null)}>{sel.length ? `Verify ${sel.length}` : "Verify unverified"}</Button>}
-        {can("analyst") && <Button icon={<Download className="h-4 w-4" />} onClick={() => download("/contacts/export", { ...flt, q, format: "xlsx" })}>Export</Button>}
+        {can("analyst") && <Button icon={<Download className="h-4 w-4" />} onClick={() => download("/contacts/export", { ...flt, ...colQuery, q, sort, format: "xlsx" })}>Export</Button>}
         {can("marketer") && <Button icon={<Upload className="h-4 w-4" />} onClick={() => setImp(true)}>Import</Button>}
         {can("marketer") && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setEdit(null)}>Add contact</Button>}
       </>} />
@@ -64,19 +66,21 @@ export default function ContactsPage() {
           </div>
         )}
         {list.isLoading ? <Loading /> : list.error ? <ErrorState error={list.error} retry={list.refetch} /> : items.length === 0 ? (
-          <Empty title="No contacts found" hint="Change filters, add a contact, or import a spreadsheet." action={can("marketer") && <Button variant="primary" onClick={() => setImp(true)}>Import contacts</Button>} />
+          <Empty title="No contacts found" hint="Change filters, add a contact, or import a spreadsheet." action={Object.keys(colQuery).length > 0 ? <Button variant="primary" onClick={() => { setCols({ f_name: "", f_company: "", f_position: "", f_email: "", f_phone: "", has_phone: null }); setPage(1); }}>Clear column filters</Button> : can("marketer") && <Button variant="primary" onClick={() => setImp(true)}>Import contacts</Button>} />
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="min-h-[360px] overflow-x-auto">
               <table className="w-full">
                 <thead><tr>
                   <th className="th w-8"><input type="checkbox" aria-label="Select all" checked={allSel} onChange={(e) => setSel(e.target.checked ? Array.from(new Set([...sel, ...items.map((c) => c.id)])) : sel.filter((id) => !items.some((c) => c.id === id)))} /></th>
-                  <th className="th cursor-pointer" onClick={() => sortBy("name")}>Name{arrow("name")}</th>
-                  <th className="th cursor-pointer" onClick={() => sortBy("company")}>Company{arrow("company")}</th>
-                  <th className="th cursor-pointer" onClick={() => sortBy("job_title")}>Position{arrow("job_title")}</th>
-                  <th className="th cursor-pointer" onClick={() => sortBy("email")}>Email{arrow("email")}</th>
-                  <th className="th">Phone</th>
-                  <th className="th">Subscription</th><th className="th">Email check</th><th className="th">Tags</th>
+                  <ColumnFilter label="Name" sortKey="name" sort={sort} onSort={setSort} text={cols.f_name} onText={setCol("f_name")} />
+                  <ColumnFilter label="Company" sortKey="company" sort={sort} onSort={setSort} text={cols.f_company} onText={setCol("f_company")} />
+                  <ColumnFilter label="Position" sortKey="job_title" sort={sort} onSort={setSort} text={cols.f_position} onText={setCol("f_position")} />
+                  <ColumnFilter label="Email" sortKey="email" sort={sort} onSort={setSort} text={cols.f_email} onText={setCol("f_email")} />
+                  <ColumnFilter label="Phone" sortKey="phone" sort={sort} onSort={setSort} text={cols.f_phone} onText={setCol("f_phone")} presence={cols.has_phone} onPresence={setCol("has_phone")} presenceLabels={["Has phone number", "No phone number"]} />
+                  <ColumnFilter label="Subscription" sortKey="subscription" sort={sort} onSort={setSort} options={SUB_STATUSES.map((x) => ({ value: x, label: titleCase(x) }))} selected={flt.subscription_status} onSelect={setFilter("subscription_status")} />
+                  <ColumnFilter label="Email check" sortKey="verification" sort={sort} onSort={setSort} options={VERIFY_STATUSES.map((x) => ({ value: x, label: titleCase(x) }))} selected={flt.verification} onSelect={setFilter("verification")} />
+                  <ColumnFilter label="Tags" options={toOptions(tags.data)} selected={flt.tag_id} onSelect={setFilter("tag_id")} />
                 </tr></thead>
                 <tbody>
                   {items.map((c) => (

@@ -134,8 +134,22 @@ def _out(ctx: Ctx, c: Contact, detail: bool = False) -> dict:
 
 
 def _filtered(q, company_id, department, job_title, subscription_status, verification, category_id,
-              tag_id, country_code, industry_id):
+              tag_id, country_code, industry_id, cols: dict | None = None):
     stmt = sa.select(Contact).join(Company, Company.id == Contact.company_id).where(Contact.deleted_at.is_(None))
+    cols = cols or {}
+    full = sa.func.concat_ws(" ", Contact.first_name, Contact.last_name)
+    col_exprs = {"name": [full, Contact.name_ar, Contact.code], "company": [Company.name, Company.name_ar],
+                 "position": [Contact.job_title, Contact.department], "email": [Contact.email]}
+    for key, exprs in col_exprs.items():
+        v = (cols.get(key) or "").strip()
+        if v:
+            stmt = stmt.where(sa.or_(*[e.ilike(f"%{v}%") for e in exprs]))
+    if (cols.get("phone") or "").strip():
+        stmt = stmt.where(sa.func.replace(Contact.phone, " ", "").ilike(f"%{cols['phone'].replace(' ', '').strip()}%"))
+    if cols.get("has_phone") is True:
+        stmt = stmt.where(Contact.phone.is_not(None), Contact.phone != "")
+    elif cols.get("has_phone") is False:
+        stmt = stmt.where(sa.or_(Contact.phone.is_(None), Contact.phone == ""))
     if q:
         like = f"%{q.strip()}%"
         full = sa.func.concat_ws(" ", Contact.first_name, Contact.last_name)
@@ -165,13 +179,14 @@ def _filtered(q, company_id, department, job_title, subscription_status, verific
 
 
 SORTS = {"name": Contact.last_name, "email": Contact.email, "company": Company.name,
-         "created_at": Contact.created_at, "job_title": Contact.job_title}
+         "created_at": Contact.created_at, "job_title": Contact.job_title, "phone": Contact.phone,
+         "subscription": Contact.subscription_status, "verification": Contact.email_verification_status}
 
 
 def _sorted(stmt, sort):
     desc = sort.startswith("-")
     col = SORTS.get(sort.lstrip("-"), Contact.created_at)
-    return stmt.order_by(col.desc() if desc else col.asc(), Contact.id)
+    return stmt.order_by(col.desc().nulls_last() if desc else col.asc().nulls_last(), Contact.id)
 
 
 @router.get("")
@@ -182,9 +197,13 @@ def list_contacts(ctx: Ctx = Viewer, q: str | None = None, page: int = 1, page_s
                   subscription_status: list[SubscriptionStatus] | None = Query(None),
                   verification: list[VerificationStatus] | None = Query(None),
                   category_id: list[uuid.UUID] | None = Query(None), tag_id: list[uuid.UUID] | None = Query(None),
-                  country_code: list[str] | None = Query(None), industry_id: list[uuid.UUID] | None = Query(None)):
+                  country_code: list[str] | None = Query(None), industry_id: list[uuid.UUID] | None = Query(None),
+                  f_name: str | None = None, f_company: str | None = None, f_position: str | None = None,
+                  f_email: str | None = None, f_phone: str | None = None, has_phone: bool | None = None):
+    cols = {"name": f_name, "company": f_company, "position": f_position, "email": f_email, "phone": f_phone,
+            "has_phone": has_phone}
     stmt = _sorted(_filtered(q, company_id, department, job_title, subscription_status, verification,
-                             category_id, tag_id, country_code, industry_id), sort)
+                             category_id, tag_id, country_code, industry_id, cols), sort)
     return paginate(ctx.db, stmt, page, page_size, lambda c: _out(ctx, c))
 
 
@@ -196,9 +215,13 @@ def export_contacts(ctx: Ctx = Analyst, format: str = Query("csv", pattern="^(cs
                     verification: list[VerificationStatus] | None = Query(None),
                     category_id: list[uuid.UUID] | None = Query(None), tag_id: list[uuid.UUID] | None = Query(None),
                     country_code: list[str] | None = Query(None),
-                    industry_id: list[uuid.UUID] | None = Query(None)):
+                    industry_id: list[uuid.UUID] | None = Query(None),
+                    f_name: str | None = None, f_company: str | None = None, f_position: str | None = None,
+                    f_email: str | None = None, f_phone: str | None = None, has_phone: bool | None = None, sort: str = "company"):
+    cols = {"name": f_name, "company": f_company, "position": f_position, "email": f_email, "phone": f_phone,
+            "has_phone": has_phone}
     stmt = _sorted(_filtered(q, company_id, department, job_title, subscription_status, verification,
-                             category_id, tag_id, country_code, industry_id), "company").limit(200_000)
+                             category_id, tag_id, country_code, industry_id, cols), sort).limit(200_000)
     rows = []
     for c in ctx.db.scalars(stmt):
         d = _out(ctx, c)

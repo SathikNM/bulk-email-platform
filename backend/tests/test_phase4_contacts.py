@@ -207,3 +207,16 @@ def test_contact_form_phone_normalised(api):
     co = _company(api)
     r = api.post("/contacts", json={"company_id": co, "email": "p@acme.sa", "phone": "055 226 8511"})
     assert r.status_code == 201 and r.json()["phone"] == "+966 55 226 8511"
+
+
+def test_column_filters(api):
+    co = _company(api, "Filter Co")
+    api.post("/contacts", json={"company_id": co, "email": "a1@f.sa", "first_name": "Aisha", "job_title": "CFO",
+                                "phone": "0501112222"})
+    api.post("/contacts", json={"company_id": co, "email": "b1@f.sa", "first_name": "Badr", "job_title": "CEO"})
+    t = lambda **p: api.get("/contacts", params=p).json()["total"]
+    assert t(has_phone=True) == 1 and t(has_phone=False) == 1
+    assert t(f_phone="0501112222") == 0 and t(f_phone="50 111") == 1
+    assert t(f_name="aish") == 1 and t(f_position="ce") == 1 and t(f_email="b1@") == 1 and t(f_company="filter") == 2
+    items = api.get("/contacts", params={"sort": "phone"}).json()["items"]
+    assert items[0]["phone"] == "+966 50 111 2222"
