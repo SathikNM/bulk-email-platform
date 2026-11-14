@@ -94,3 +94,24 @@ Backups: daily PostgreSQL snapshots with point-in-time recovery; test a restore 
 | Containers run as non-root | ✅ |
 | CI: lint, migration drift check, 105 integration tests, frontend lint/type-check/build | ✅ |
 | Before go-live: penetration test, load test at expected volume, backup restore drill, Sentry/APM | ⏳ Your environment |
+
+## Built-in direct delivery (no outside email service)
+
+Sending accounts with provider **Built-in (direct delivery)** make the platform its own mail server: it looks up each
+recipient's MX hosts, delivers on port 25 with opportunistic STARTTLS, signs every message with a DKIM key it
+generates per account, retries 4xx replies with back-off, suppresses addresses that hard-bounce (5.1.x), paces
+delivery per destination (Google, Microsoft, …) and warms new IPs up automatically
+(50/day → 10,000/day by day 23 → the configured limit by day 35).
+
+Infrastructure it needs (checked by **Verify & DNS**, which also prints the exact records):
+
+| Requirement | Where it is set |
+|---|---|
+| Fixed public IP, outbound port 25 open | Internet provider or server host |
+| Reverse DNS (PTR) of that IP = HELO name, e.g. `mail.primecfo.sa` | Internet provider or server host |
+| `A mail.primecfo.sa → IP` | Domain DNS |
+| SPF including `ip4:<IP>` (keeps existing senders) | Domain DNS |
+| DKIM TXT `bep._domainkey.<domain>` | Domain DNS (value shown in the platform) |
+| DMARC TXT `_dmarc.<domain>` | Domain DNS |
+
+The platform must run on that machine 24/7 (workers deliver and retry in the background).

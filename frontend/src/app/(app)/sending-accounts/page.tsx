@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Gauge, Pencil, Plus, ShieldCheck, Star, Trash2 } from "lucide-react";
+import { CheckCircle2, Gauge, KeyRound, Pencil, Plus, ShieldCheck, Star, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Alert, Badge, Button, Card, Confirm, Drawer, Empty, ErrorState, Field, Loading, Modal, PageHeader, Select, StatusBadge } from "@/components/ui";
@@ -11,13 +11,15 @@ import { useAction, useWsQuery } from "@/lib/hooks";
 import type { SendingAccount } from "@/lib/types";
 
 type Dns = { type: string; name: string; value: string; purpose: string }[];
+type Check = { check: string; ok: boolean; detail: string };
+const PROVIDER_LABEL: Record<string, string> = { direct: "Built-in (direct delivery)", smtp: "SMTP", ses: "Amazon SES" };
 const REGIONS = ["me-central-1", "me-south-1", "eu-west-1", "eu-central-1", "eu-west-2", "us-east-1", "us-west-2", "ap-south-1", "ap-southeast-1"];
 
 export default function SendingAccountsPage() {
   const { can } = useAuth();
   const list = useWsQuery(["sending-accounts"], () => api.get<SendingAccount[]>("/sending-accounts"));
   const [edit, setEdit] = useState<SendingAccount | null | undefined>(undefined);
-  const [dns, setDns] = useState<{ a: SendingAccount; records: Dns; ok: boolean; error?: string } | null>(null);
+  const [dns, setDns] = useState<{ a: SendingAccount; records: Dns; ok: boolean; error?: string; checks?: Check[] } | null>(null);
   const [quota, setQuota] = useState<Record<string, unknown> | null>(null);
   const [del, setDel] = useState<SendingAccount | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -26,20 +28,21 @@ export default function SendingAccountsPage() {
   const verify = async (a: SendingAccount) => {
     setBusy(a.id);
     try {
-      const r = await api.post<{ ok: boolean; error?: string; dns_records: Dns }>(`/sending-accounts/${a.id}/verify`);
-      setDns({ a, records: r.dns_records || [], ok: r.ok, error: r.error });
+      const r = await api.post<{ ok: boolean; error?: string; dns_records: Dns; checks?: Check[] }>(`/sending-accounts/${a.id}/verify`);
+      setDns({ a, records: r.dns_records || [], ok: r.ok, error: r.error, checks: r.checks });
       r.ok ? toast.success("Account verified") : toast.warning(r.error || "Not verified yet");
       list.refetch();
     } catch (e) { toast.error(errorMessage(e)); } finally { setBusy(null); }
   };
+  const rotate = useAction((id: string) => api.post(`/sending-accounts/${id}/rotate-dkim`), { success: "New DKIM key generated: publish the new DKIM record, then verify", invalidate: [["sending-accounts"]] });
   const showQuota = async (a: SendingAccount) => {
     try { setQuota({ name: a.name, ...(await api.get<Record<string, unknown>>(`/sending-accounts/${a.id}/quota`)) }); }
     catch (e) { toast.error(errorMessage(e)); }
   };
   return (
     <>
-      <PageHeader title="Sending Accounts" subtitle="Amazon SES or SMTP accounts used to deliver campaigns. Credentials are encrypted and never shown again." actions={can("admin") && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setEdit(null)}>Add account</Button>} />
-      <div className="mb-5"><Alert tone="blue" title="Deliverability checklist">Verify your sending domain, publish SPF, DKIM and DMARC records, and request SES production access before sending at volume. Keep bounces under 5% and complaints under 0.1%.</Alert></div>
+      <PageHeader title="Sending Accounts" subtitle="Addresses your campaigns are sent from. Built-in direct delivery needs no outside service; SMTP and Amazon SES are optional." actions={can("admin") && <Button variant="primary" icon={<Plus className="h-4 w-4" />} onClick={() => setEdit(null)}>Add account</Button>} />
+      <div className="mb-5"><Alert tone="blue" title="Deliverability checklist">Built-in delivery needs a fixed public IP with reverse DNS (PTR), plus SPF, DKIM and DMARC records: click Verify &amp; DNS for the exact values. New IPs warm up automatically (50/day rising to your limit over about 5 weeks). Keep bounces under 5% and complaints under 0.1%.</Alert></div>
       {list.isLoading ? <Loading /> : list.error ? <ErrorState error={list.error} /> : list.data!.length === 0 ? (
         <div className="card"><Empty title="No sending account yet" hint="Add an Amazon SES account (recommended) or any SMTP relay." action={can("admin") && <Button variant="primary" onClick={() => setEdit(null)}>Add account</Button>} /></div>
       ) : (
@@ -47,15 +50,16 @@ export default function SendingAccountsPage() {
           {list.data!.map((a) => (
             <Card key={a.id} title={<span className="flex items-center gap-2">{a.name}{a.is_default && <Badge tone="brand"><Star className="h-3 w-3" />Default</Badge>}</span>} actions={<StatusBadge status={a.verification_status} />}>
               <dl className="grid grid-cols-2 gap-y-2 text-sm">
-                <dt className="text-slate-500">Provider</dt><dd className="font-medium">{a.provider === "ses" ? `Amazon SES (${a.region})` : "SMTP"}</dd>
+                <dt className="text-slate-500">Provider</dt><dd className="font-medium">{a.provider === "ses" ? `Amazon SES (${a.region})` : PROVIDER_LABEL[a.provider]}</dd>
                 <dt className="text-slate-500">From</dt><dd className="font-medium">{a.from_name ? `${a.from_name} <${a.from_email}>` : a.from_email}</dd>
                 <dt className="text-slate-500">Domain</dt><dd className="font-medium">{a.domain}</dd>
-                <dt className="text-slate-500">Limits</dt><dd className="font-medium">{a.max_per_second}/sec · {fmtNum(a.max_per_day)}/day</dd>
-                <dt className="text-slate-500">Credentials</dt><dd className="font-medium">{a.credentials_set ? Object.entries(a.credentials_hint).map(([k, v]) => `${k}: ${v}`).join(", ") : a.provider === "ses" ? "Server IAM role" : "Not set"}</dd>
+                <dt className="text-slate-500">Limits</dt><dd className="font-medium">{a.max_per_second}/sec · {fmtNum(a.max_per_day)}/day{a.warmup_active && <div className="text-xs font-normal text-amber-700">Warming up: {fmtNum(a.warmup_limit_today ?? 0)} today</div>}</dd>
+                <dt className="text-slate-500">Credentials</dt><dd className="font-medium">{a.credentials_set ? Object.entries(a.credentials_hint).filter(([k]) => !["dkim_private_key", "warmup_started"].includes(k)).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`).join(", ") : a.provider === "ses" ? "Server IAM role" : "Not set"}</dd>
               </dl>
               {can("admin") && (
                 <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                   <Button size="sm" icon={<ShieldCheck className="h-3.5 w-3.5" />} loading={busy === a.id} onClick={() => verify(a)}>Verify & DNS</Button>
+                  {a.provider === "direct" && <Button size="sm" icon={<KeyRound className="h-3.5 w-3.5" />} onClick={() => rotate.mutate(a.id)}>New DKIM key</Button>}
                   {a.provider === "ses" && <Button size="sm" icon={<Gauge className="h-3.5 w-3.5" />} onClick={() => showQuota(a)}>Quota</Button>}
                   {!a.is_default && <Button size="sm" icon={<Star className="h-3.5 w-3.5" />} onClick={() => makeDefault.mutate(a.id)}>Make default</Button>}
                   <Button size="sm" icon={<Pencil className="h-3.5 w-3.5" />} onClick={() => setEdit(a)}>Edit</Button>
@@ -70,6 +74,7 @@ export default function SendingAccountsPage() {
       <Modal open={!!dns} onClose={() => setDns(null)} wide title={`DNS records for ${dns?.a.domain}`}>
         {dns && <div className="space-y-3">
           {dns.ok ? <Alert tone="green" title="Verified"><span className="inline-flex items-center gap-1"><CheckCircle2 className="h-4 w-4" />This account can send.</span></Alert> : <Alert tone="amber" title="Not verified yet">{dns.error || "Publish the records below at your DNS provider, wait for propagation, then verify again."}</Alert>}
+          {dns.checks && <ul className="grid gap-1.5 text-sm sm:grid-cols-2">{dns.checks.map((c) => <li key={c.check} className="flex items-start gap-2">{c.ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />}<span><b>{c.check}</b><span className="block break-all text-xs text-slate-500">{c.detail}</span></span></li>)}</ul>}
           <table className="w-full text-sm"><thead><tr><th className="th">Type</th><th className="th">Name</th><th className="th">Value</th></tr></thead>
             <tbody>{dns.records.map((r) => <tr key={r.name + r.value}><td className="td font-mono text-xs">{r.type}</td><td className="td break-all font-mono text-xs">{r.name}<div className="mt-1 font-sans text-[11px] text-slate-500">{r.purpose}</div></td><td className="td break-all font-mono text-xs"><button className="text-start hover:text-brand-700" onClick={() => { navigator.clipboard.writeText(r.value); toast.success("Copied"); }}>{r.value}</button></td></tr>)}</tbody></table>
         </div>}
@@ -89,13 +94,14 @@ function AccountForm({ open, account, onClose }: { open: boolean; account?: Send
   const key = account?.id ?? "new";
   if (open && init !== key) {
     setInit(key);
-    setF({ name: account?.name || "", provider: account?.provider || "ses", from_email: account?.from_email || "", from_name: account?.from_name || "", reply_to: account?.reply_to || "", region: account?.region || "me-central-1", configuration_set: account?.configuration_set || "", max_per_second: String(account?.max_per_second ?? 10), max_per_day: String(account?.max_per_day ?? 50000) });
-    setCreds(account?.provider === "smtp" ? { host: account.credentials_hint.host || "", port: String(account.credentials_hint.port || "587"), username: account.credentials_hint.username || "", security: account.credentials_hint.security || "starttls" } : account?.provider === "ses" ? { access_key_id: account.credentials_hint.access_key_id || "" } : { port: "587", security: "starttls" });
+    setF({ name: account?.name || "", provider: account?.provider || "direct", from_email: account?.from_email || "", from_name: account?.from_name || "", reply_to: account?.reply_to || "", region: account?.region || "me-central-1", configuration_set: account?.configuration_set || "", max_per_second: String(account?.max_per_second ?? 2), max_per_day: String(account?.max_per_day ?? 10000) });
+    setCreds(account?.provider === "smtp" ? { host: account.credentials_hint.host || "", port: String(account.credentials_hint.port || "587"), username: account.credentials_hint.username || "", security: account.credentials_hint.security || "starttls" } : account?.provider === "ses" ? { access_key_id: account.credentials_hint.access_key_id || "" } : account?.provider === "direct" ? { helo_hostname: account.credentials_hint.helo_hostname || "", dkim_selector: account.credentials_hint.dkim_selector || "bep", warmup: String(account.credentials_hint.warmup ?? "true") } : { port: "587", security: "starttls", dkim_selector: "bep", warmup: "true" });
   }
   if (!open && init !== null) setInit(null);
   const save = useAction(() => {
     const isSes = f.provider === "ses";
-    const c = isSes ? (creds.access_key_id ? { access_key_id: creds.access_key_id, secret_access_key: creds.secret_access_key } : undefined) : { host: creds.host, port: Number(creds.port), username: creds.username || undefined, password: creds.password || undefined, security: creds.security };
+    const c = f.provider === "direct" ? { helo_hostname: creds.helo_hostname || undefined, dkim_selector: creds.dkim_selector || "bep", warmup: creds.warmup !== "false" }
+      : isSes ? (creds.access_key_id ? { access_key_id: creds.access_key_id, secret_access_key: creds.secret_access_key } : undefined) : { host: creds.host, port: Number(creds.port), username: creds.username || undefined, password: creds.password || undefined, security: creds.security };
     const body: Record<string, unknown> = { name: f.name, from_name: f.from_name || null, reply_to: f.reply_to || null, region: isSes ? f.region : null, configuration_set: f.configuration_set || null, max_per_second: Number(f.max_per_second), max_per_day: Number(f.max_per_day) };
     if (c && Object.values(c).some(Boolean)) body.credentials = c; // server merges: blank fields keep saved values
     return account ? api.patch(`/sending-accounts/${account.id}`, body) : api.post("/sending-accounts", { ...body, provider: f.provider, from_email: f.from_email });
@@ -107,7 +113,7 @@ function AccountForm({ open, account, onClose }: { open: boolean; account?: Send
     <Drawer open={open} onClose={onClose} title={account ? "Edit sending account" : "Add sending account"} footer={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={save.isPending} onClick={() => save.mutate(undefined)} disabled={!f.name || !f.from_email}>Save</Button></>}>
       <div className="grid grid-cols-2 gap-4">
         <Field label="Account name *" className="col-span-2"><input className="input" value={f.name || ""} onChange={set("name")} placeholder="e.g. Marketing (SES Bahrain)" /></Field>
-        <Field label="Provider"><Select value={f.provider} onChange={(v) => setF({ ...f, provider: v })} disabled={!!account} options={[{ value: "ses", label: "Amazon SES" }, { value: "smtp", label: "SMTP relay" }]} /></Field>
+        <Field label="Provider"><Select value={f.provider} onChange={(v) => setF({ ...f, provider: v })} disabled={!!account} options={[{ value: "direct", label: "Built-in (direct delivery)" }, { value: "smtp", label: "SMTP relay" }, { value: "ses", label: "Amazon SES" }]} /></Field>
         {isSes && <Field label="AWS region"><Select value={f.region} onChange={(v) => setF({ ...f, region: v })} options={REGIONS.map((r) => ({ value: r, label: r }))} /></Field>}
         <Field label="From email *"><input className="input" type="email" disabled={!!account} value={f.from_email || ""} onChange={set("from_email")} placeholder="news@yourdomain.com" /></Field>
         <Field label="From name"><input className="input" value={f.from_name || ""} onChange={set("from_name")} /></Field>
@@ -117,7 +123,14 @@ function AccountForm({ open, account, onClose }: { open: boolean; account?: Send
         <Field label="Max emails per day"><input className="input" type="number" min={1} value={f.max_per_day || ""} onChange={set("max_per_day")} /></Field>
         <fieldset className="col-span-2 rounded-lg border border-slate-200 p-3">
           <legend className="px-1 text-xs font-semibold text-slate-600">Credentials {account && "(leave blank to keep current)"}</legend>
-          {isSes ? (
+          {f.provider === "direct" ? (
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Mail server name (HELO)" hint="Must match the reverse DNS of your public IP"><input className="input" value={creds.helo_hostname || ""} onChange={setc("helo_hostname")} placeholder={`mail.${(f.from_email || "yourdomain.com").split("@")[1] || "yourdomain.com"}`} /></Field>
+              <Field label="DKIM selector"><input className="input" value={creds.dkim_selector || ""} onChange={setc("dkim_selector")} /></Field>
+              <Field label="Warm-up" className="col-span-2" hint="Recommended for a new IP: 50/day, rising to your daily limit over about 5 weeks"><Select value={creds.warmup || "true"} onChange={(v) => setCreds({ ...creds, warmup: v })} options={[{ value: "true", label: "On" }, { value: "false", label: "Off (IP already has a sending reputation)" }]} /></Field>
+              <p className="col-span-2 text-xs text-slate-500">No password needed: the platform delivers straight to each recipient&apos;s mail server and signs every email with its own DKIM key, generated when you save. Any address on this domain can use the same setup.</p>
+            </div>
+          ) : isSes ? (
             <div className="grid grid-cols-2 gap-3">
               <Field label="Access key ID"><input className="input" autoComplete="off" value={creds.access_key_id || ""} onChange={setc("access_key_id")} /></Field>
               <Field label="Secret access key"><input className="input" type="password" name="aws-secret" autoComplete="new-password" data-lpignore="true" readOnly onFocus={(e) => e.currentTarget.removeAttribute("readonly")} value={creds.secret_access_key || ""} onChange={setc("secret_access_key")} /></Field>

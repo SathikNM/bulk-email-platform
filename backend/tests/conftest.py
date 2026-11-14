@@ -220,7 +220,8 @@ class _Sink:
         import email
         import email.policy
         self.messages.append({"from": envelope.mail_from, "to": list(envelope.rcpt_tos),
-                              "msg": email.message_from_bytes(envelope.content, policy=email.policy.default)})
+                              "msg": email.message_from_bytes(envelope.content, policy=email.policy.default),
+                              "raw": envelope.original_content or envelope.content})
         return "250 OK"
 
     async def handle_RCPT(self, server, session, envelope, address, rcpt_options):  # noqa: N802

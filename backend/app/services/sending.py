@@ -27,6 +27,7 @@ from app.models.enums import CampaignStatus as S
 from app.models.enums import EventType
 from app.models.enums import RecipientStatus as R
 from app.providers import AccountError, OutgoingEmail, PermanentError, TransientError, build_provider
+from app.providers.direct import HardBounce
 from app.services import rendering
 from app.services.compliance import eligibility_clause
 
@@ -50,7 +51,8 @@ def reserve_daily(account: SendingAccount) -> bool:
     n = r.incr(key)
     if n == 1:
         r.expire(key, 2 * 86400)
-    if n > account.max_per_day:
+    from app.api.v1.sending_accounts import effective_daily_limit
+    if n > effective_daily_limit(account):
         r.decr(key)
         return False
     return True
@@ -246,6 +248,18 @@ def send_batch(db: Session, campaign_id: uuid.UUID) -> dict:
                     rec.next_attempt_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
                     out["requeued"] += 1
                     out["retry_in"] = min(out["retry_in"] or delay, delay)
+                db.commit()
+                continue
+            except HardBounce as e:
+                rec.status, rec.last_error = R.BOUNCED, str(e)[:500]
+                _event(db, rec, EventType.BOUNCE_HARD, raw={"error": str(e)[:500]})
+                contact = db.get(Contact, rec.contact_id)
+                if contact:
+                    from app.services.compliance import unsubscribe_contact
+                    from app.models.enums import SuppressionReason
+                    unsubscribe_contact(db, rec.workspace_id, contact, SuppressionReason.HARD_BOUNCE,
+                                        "direct: address does not exist")
+                out["failed"] += 1
                 db.commit()
                 continue
             except PermanentError as e:

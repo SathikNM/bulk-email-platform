@@ -94,6 +94,7 @@ class BlockType(StrEnum):
 class Provider(StrEnum):
     SES = "ses"
     SMTP = "smtp"
+    DIRECT = "direct"
 
 
 class IdentityStatus(StrEnum):

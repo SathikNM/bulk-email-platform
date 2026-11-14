@@ -30,6 +30,34 @@ class SMTPCreds(BaseModel):
     security: str = Field("starttls", pattern="^(starttls|ssl|none)$")
 
 
+class DirectCreds(BaseModel):
+    helo_hostname: str | None = Field(default=None, pattern=r"^[A-Za-z0-9.-]+$")
+    dkim_selector: str = Field("bep", pattern=r"^[A-Za-z0-9-]+$")
+    dkim_private_key: str | None = None
+    warmup: bool = True
+    warmup_started: str | None = None
+
+
+CREDS = {Provider.SES: SESCreds, Provider.SMTP: SMTPCreds, Provider.DIRECT: DirectCreds}
+SECRET_KEYS = ("password", "secret_access_key", "dkim_private_key")
+
+
+def _prepare_direct(creds: dict | None, domain: str) -> dict:
+    """Fill defaults and generate the DKIM key on first save."""
+    from datetime import datetime, timezone
+
+    from app.providers.direct import generate_dkim_key
+    c = dict(creds or {})
+    c.setdefault("helo_hostname", f"mail.{domain}")
+    c.setdefault("dkim_selector", "bep")
+    c.setdefault("warmup", True)
+    if not c.get("dkim_private_key"):
+        c["dkim_private_key"] = generate_dkim_key()
+    if not c.get("warmup_started"):
+        c["warmup_started"] = datetime.now(timezone.utc).isoformat()
+    return c
+
+
 class AccountIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     provider: Provider
@@ -46,7 +74,7 @@ class AccountIn(BaseModel):
     @model_validator(mode="after")
     def _creds(self):
         if self.credentials is not None:
-            (SESCreds if self.provider == Provider.SES else SMTPCreds).model_validate(self.credentials)
+            CREDS[self.provider].model_validate(self.credentials)
         if self.provider == Provider.SES and not self.region:
             raise ValueError("region is required for SES")
         return self
@@ -68,9 +96,31 @@ def _out(a: SendingAccount) -> dict:
     d = row_dict(a)
     creds = decrypt_json(a.encrypted_credentials)
     d["credentials_set"] = bool(creds)
-    d["credentials_hint"] = {k: ("••••" if k in ("password", "secret_access_key") else v)
-                             for k, v in creds.items() if v}
+    d["credentials_hint"] = {k: ("••••" if k in SECRET_KEYS else v)
+                             for k, v in creds.items() if v not in (None, "")}
+    if a.provider == Provider.DIRECT:
+        from app.providers.direct import warmup_limit
+        d["warmup_limit_today"] = effective_daily_limit(a, creds)
+        d["warmup_active"] = bool(creds.get("warmup", True)) and warmup_limit(_started(creds)) is not None
     return d
+
+
+def _started(creds: dict):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(creds["warmup_started"]) if creds.get("warmup_started") else None
+    except ValueError:
+        return None
+
+
+def effective_daily_limit(a: SendingAccount, creds: dict | None = None) -> int:
+    """max_per_day, capped by the warm-up schedule for direct delivery."""
+    if a.provider != Provider.DIRECT:
+        return a.max_per_day
+    from app.providers.direct import warmup_limit
+    creds = creds if creds is not None else decrypt_json(a.encrypted_credentials)
+    cap = warmup_limit(_started(creds)) if creds.get("warmup", True) else None
+    return min(a.max_per_day, cap) if cap else a.max_per_day
 
 
 def _make_default(ctx: Ctx, a: SendingAccount):
@@ -86,8 +136,10 @@ def list_accounts(ctx: Ctx = Viewer):
 @router.post("", status_code=201)
 def create_account(body: AccountIn, ctx: Ctx = Admin):
     data = body.model_dump(exclude={"credentials", "is_default"})
-    a = SendingAccount(workspace_id=ctx.workspace_id, domain=body.from_email.split("@", 1)[1].lower(),
-                       encrypted_credentials=encrypt_json(body.credentials) if body.credentials else None, **data)
+    domain = body.from_email.split("@", 1)[1].lower()
+    creds = _prepare_direct(body.credentials, domain) if body.provider == Provider.DIRECT else body.credentials
+    a = SendingAccount(workspace_id=ctx.workspace_id, domain=domain,
+                       encrypted_credentials=encrypt_json(creds) if creds else None, **data)
     try:
         with ctx.db.begin_nested():
             ctx.db.add(a)
@@ -114,7 +166,9 @@ def update_account(account_id: uuid.UUID, body: AccountUpdate, ctx: Ctx = Admin)
         merged = {**decrypt_json(a.encrypted_credentials),
                   **{k: (v.strip() if isinstance(v, str) and k != "password" else v)
                      for k, v in body.credentials.items() if v not in (None, "")}}
-        (SESCreds if a.provider == Provider.SES else SMTPCreds).model_validate(merged)
+        if a.provider == Provider.DIRECT:
+            merged = _prepare_direct(merged, a.domain)
+        CREDS[a.provider].model_validate(merged)
         a.encrypted_credentials = encrypt_json(merged)
         a.verification_status = IdentityStatus.PENDING
     if body.is_default:
@@ -150,6 +204,21 @@ def verify_account(account_id: uuid.UUID, ctx: Ctx = Admin):
     a.verification_status = IdentityStatus.VERIFIED if result.get("ok") else IdentityStatus.PENDING
     a.dns_records = result.get("dns_records") or _guidance(a)
     return {**result, "dns_records": a.dns_records}
+
+
+@router.post("/{account_id}/rotate-dkim")
+def rotate_dkim(account_id: uuid.UUID, ctx: Ctx = Admin):
+    """Generate a new DKIM key (publish the new TXT record, then verify again)."""
+    a = get_or_404(ctx.db, SendingAccount, account_id, "Sending account")
+    if a.provider != Provider.DIRECT:
+        raise BadRequest("Only direct-delivery accounts have a platform DKIM key")
+    from app.providers.direct import generate_dkim_key
+    creds = decrypt_json(a.encrypted_credentials)
+    creds["dkim_private_key"] = generate_dkim_key()
+    a.encrypted_credentials = encrypt_json(creds)
+    a.verification_status = IdentityStatus.PENDING
+    audit(ctx, "rotate_dkim", "sending_account", a.id)
+    return _out(a)
 
 
 @router.get("/{account_id}/quota")

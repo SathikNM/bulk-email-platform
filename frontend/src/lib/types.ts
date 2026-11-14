@@ -193,7 +193,7 @@ export type Validation = {
 export type SendingAccount = {
   id: string;
   name: string;
-  provider: "ses" | "smtp";
+  provider: "ses" | "smtp" | "direct";
   from_email: string;
   from_name: string | null;
   reply_to: string | null;
@@ -207,4 +207,6 @@ export type SendingAccount = {
   is_default: boolean;
   credentials_set: boolean;
   credentials_hint: Record<string, string>;
+  warmup_limit_today?: number;
+  warmup_active?: boolean;
 };
