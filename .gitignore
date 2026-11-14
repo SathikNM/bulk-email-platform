@@ -34,3 +34,4 @@ logs/vps-command.sh
 
 # Local deployment settings
 scripts/deploy-config.cmd
+logs/task.py
