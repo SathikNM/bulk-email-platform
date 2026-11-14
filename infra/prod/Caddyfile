@@ -1,20 +1,13 @@
 # Automatic HTTPS for the platform. The admin UI and API are limited to ADMIN_ALLOWED_CIDRS
 # (space-separated; default: everyone). Tracking, unsubscribe and asset links stay public because
 # recipients open them from anywhere.
-{$DOMAIN} {
+
+(routes) {
 	encode zstd gzip
-
-	@restricted {
-		not remote_ip {$ADMIN_ALLOWED_CIDRS}
-		not path /t/* /u/* /assets/* /webhooks/*
-	}
-	respond @restricted "Access restricted" 403
-
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		-Server
 	}
-
 	@backend path /api/* /health /health/* /t/* /u/* /assets/* /webhooks/*
 	handle @backend {
 		reverse_proxy api:8000
@@ -22,4 +15,21 @@
 	handle {
 		reverse_proxy web:3000
 	}
+}
+
+{$DOMAIN} {
+	@restricted {
+		not remote_ip {$ADMIN_ALLOWED_CIDRS}
+		not path /t/* /u/* /assets/* /webhooks/*
+	}
+	respond @restricted "Access restricted" 403
+	import routes
+}
+
+# Break-glass admin access when no allowlisted IP is available. The port is published on the
+# server's loopback only (127.0.0.1:8443), so it is reachable solely through an SSH tunnel:
+#   ssh -L 8443:localhost:8443 ubuntu@<server>   then open https://localhost:8443
+https://localhost:8443 {
+	tls internal
+	import routes
 }

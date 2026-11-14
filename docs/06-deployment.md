@@ -150,3 +150,12 @@ Re-running `deploy-vps.cmd` updates the server in place; data, secrets and certi
 Backups: a daily `pg_dump` is written to `/opt/bulk-email/backups` and kept for 14 days.
 `scripts/vps-run.cmd` runs `logs/vps-command.sh` on the server for diagnostics.
 The `ubuntu` user needs passwordless sudo (or membership of the `docker` group after the first run).
+
+### Break-glass admin access
+
+If the office IP changes and the VPN is unavailable, the admin UI is still reachable through SSH:
+`ssh -i %USERPROFILE%\.ssh\primecfo_mail_ed25519 -L 8443:localhost:8443 ubuntu@<server>` and open
+`https://localhost:8443` (self-signed certificate; accept the browser warning). Port 8443 is bound to the
+server's loopback, so it is never reachable from the internet. Two-factor sign-in still applies.
+To change the allowlist permanently, edit `ADMIN_ALLOWED_CIDRS` in `scripts/deploy-config.cmd` and re-run
+`scripts/deploy-vps.cmd`.
