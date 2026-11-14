@@ -29,3 +29,27 @@ def run_import(job_id: str, workspace_id: str) -> None:
             db.commit()
     finally:
         db.close()
+
+
+@celery.task(name="bep.verify_contacts")
+def verify_contacts(workspace_id: str, contact_ids: list[str]) -> dict:
+    from app.models import Contact
+    from app.services.verification import verify
+
+    db = worker_session(uuid.UUID(workspace_id))
+    counts: dict[str, int] = {}
+    try:
+        for cid in contact_ids:
+            c = db.get(Contact, uuid.UUID(cid))
+            if c is None:
+                continue
+            status, _reason = verify(c.email)
+            if status is not None:
+                c.email_verification_status = status
+                counts[status.value] = counts.get(status.value, 0) + 1
+            else:
+                counts["inconclusive"] = counts.get("inconclusive", 0) + 1
+        db.commit()
+        return counts
+    finally:
+        db.close()

@@ -18,7 +18,7 @@ from app.core.config import settings
 APP_ROLE = "bep_app"
 
 _engine: sa.Engine | None = None
-SessionLocal = sessionmaker(expire_on_commit=False, autoflush=False)
+SessionLocal = sessionmaker(expire_on_commit=False, autoflush=True)
 
 
 def configure_engine(url: str | None = None) -> sa.Engine:
