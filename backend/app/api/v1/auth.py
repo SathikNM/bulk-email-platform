@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Cookie, Depends, Request, Response
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -26,8 +26,10 @@ COOKIE_PATH = "/api/v1/auth"
 
 
 class LoginIn(BaseModel):
-    email: EmailStr
-    password: str
+    # Plain string (not EmailStr): sign-in only looks the address up, and seeded/internal
+    # accounts may use reserved domains such as .local that strict validation rejects.
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
 
 
 class PasswordChangeIn(BaseModel):
@@ -56,7 +58,7 @@ def _public(out: dict) -> dict:
 
 
 @router.post("/login")
-def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db, scope="function")):
     r = get_redis()
     key = _lock_key(body.email)
     if int(r.get(key) or 0) >= settings.LOGIN_MAX_FAILURES:
@@ -78,7 +80,7 @@ def login(body: LoginIn, request: Request, response: Response, db: Session = Dep
 
 
 @router.post("/refresh")
-def refresh(response: Response, db: Session = Depends(get_db),
+def refresh(response: Response, db: Session = Depends(get_db, scope="function"),
             bep_refresh: str | None = Cookie(default=None)):
     raw = bep_refresh
     if not raw:
@@ -106,7 +108,7 @@ def refresh(response: Response, db: Session = Depends(get_db),
 
 
 @router.post("/logout", status_code=204)
-def logout(response: Response, db: Session = Depends(get_db),
+def logout(response: Response, db: Session = Depends(get_db, scope="function"),
            bep_refresh: str | None = Cookie(default=None)):
     if bep_refresh:
         db.execute(sa.update(RefreshToken).where(RefreshToken.token_hash == hash_token(bep_refresh))
@@ -117,7 +119,7 @@ def logout(response: Response, db: Session = Depends(get_db),
 
 
 @router.get("/me")
-def me(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def me(user: User = Depends(current_user), db: Session = Depends(get_db, scope="function")):
     if user.is_superadmin:
         rows = db.execute(sa.select(Workspace, WorkspaceMember.role).outerjoin(
             WorkspaceMember, sa.and_(WorkspaceMember.workspace_id == Workspace.id,
@@ -138,7 +140,7 @@ def me(user: User = Depends(current_user), db: Session = Depends(get_db)):
 
 @router.post("/change-password", status_code=204)
 def change_password(body: PasswordChangeIn, user: User = Depends(current_user),
-                    db: Session = Depends(get_db)):
+                    db: Session = Depends(get_db, scope="function")):
     if not verify_password(body.current_password, user.password_hash):
         raise BadRequest("Current password is incorrect")
     if err := validate_password_strength(body.new_password):

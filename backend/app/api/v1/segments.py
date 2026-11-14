@@ -54,10 +54,11 @@ def _refresh(ctx: Ctx, s: Segment) -> dict:
     return c
 
 
-def _contact_row(c: Contact, company: str, eligible: bool) -> dict:
+def _contact_row(c: Contact, company: str, eligible: bool, co_city: str | None = None,
+                 co_country: str | None = None) -> dict:
     return {"id": str(c.id), "code": c.code, "first_name": c.first_name, "last_name": c.last_name,
             "email": c.email, "job_title": c.job_title, "department": c.department, "company_name": company,
-            "country_code": c.country_code, "city": c.city, "subscription_status": c.subscription_status.value,
+            "country_code": c.country_code or co_country, "city": c.city or co_city, "subscription_status": c.subscription_status.value,
             "email_verification_status": c.email_verification_status.value, "eligible": eligible}
 
 
@@ -68,12 +69,12 @@ def _preview(ctx: Ctx, rules: dict, page: int, page_size: int, eligible_only: bo
         raise BadRequest(str(e)) from None
     if eligible_only:
         stmt = stmt.where(eligibility_clause())
-    stmt = stmt.add_columns(Company.name, eligibility_clause().label("eligible")) \
+    stmt = stmt.add_columns(Company.name, eligibility_clause().label("eligible"), Company.city, Company.country_code) \
         .order_by(Company.name, Contact.last_name, Contact.id)
     page, page_size = max(page, 1), min(max(page_size, 1), 200)
     total = ctx.db.scalar(sa.select(sa.func.count()).select_from(stmt.order_by(None).subquery()))
     rows = ctx.db.execute(stmt.limit(page_size).offset((page - 1) * page_size)).all()
-    return {"items": [_contact_row(c, n, bool(e)) for c, n, e in rows], "total": total, "page": page,
+    return {"items": [_contact_row(c, n, bool(e), cc, ct) for c, n, e, cc, ct in rows], "total": total, "page": page,
             "page_size": page_size}
 
 

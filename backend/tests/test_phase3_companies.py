@@ -239,3 +239,9 @@ def test_audit_log_written(api):
         n = s.scalar(sa.text("SELECT count(*) FROM audit_logs WHERE entity_id = :i AND action='create'"),
                      {"i": c["id"]})
     assert n == 1
+
+
+def test_login_accepts_reserved_domain_accounts(client):
+    """Seeded admin uses admin@primecfo.local; sign-in must not reject reserved TLDs."""
+    _, email, pw = make_user(email="admin-test@primecfo.local")
+    assert client.post("/api/v1/auth/login", json={"email": email, "password": pw}).status_code == 200

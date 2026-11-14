@@ -35,7 +35,11 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 def get_db() -> Iterator[Session]:
-    """One transaction per request: commit on success, rollback on any exception."""
+    """One transaction per request: commit on success, rollback on any exception.
+
+    Always declared with scope="function" so the commit happens BEFORE the response is
+    sent: a failed commit becomes a 500 instead of a false 200, and tasks enqueued
+    after commit see committed data."""
     s = new_session()
     try:
         with s.begin():
@@ -46,7 +50,7 @@ def get_db() -> Iterator[Session]:
 
 def current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope="function"),
 ) -> User:
     if creds is None or creds.scheme.lower() != "bearer":
         raise AppError(401, "Unauthorized", "Missing bearer token")
@@ -74,7 +78,7 @@ def workspace_ctx(
     request: Request,
     x_workspace_id: uuid.UUID = Header(..., alias="X-Workspace-Id"),
     user: User = Depends(current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope="function"),
 ) -> Ctx:
     member = db.scalar(sa.select(WorkspaceMember).where(
         WorkspaceMember.workspace_id == x_workspace_id, WorkspaceMember.user_id == user.id))

@@ -47,7 +47,7 @@ class MemberUpdate(BaseModel):
 
 @router.post("/workspaces", status_code=201)
 def create_workspace(body: WorkspaceIn, user: User = Depends(current_user),
-                     db: Session = Depends(get_db)):
+                     db: Session = Depends(get_db, scope="function")):
     if not user.is_superadmin:
         raise Forbidden("Only platform administrators can create workspaces")
     slug = body.slug or re.sub(r"[^a-z0-9]+", "-", body.name.lower()).strip("-")[:80]
