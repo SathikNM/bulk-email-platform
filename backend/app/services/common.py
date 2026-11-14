@@ -112,3 +112,57 @@ def get_or_404(db: Session, model, obj_id, label: str | None = None):
     if obj is None or getattr(obj, "deleted_at", None) is not None:
         raise NotFound(label or model.__name__)
     return obj
+
+
+# ---------------- phone numbers ----------------
+# International calling codes for the countries contacts are most likely to come from.
+CALLING_CODES = {
+    "SA": "966", "AE": "971", "QA": "974", "KW": "965", "BH": "973", "OM": "968", "EG": "20", "JO": "962",
+    "LB": "961", "IQ": "964", "MA": "212", "TN": "216", "DZ": "213", "GB": "44", "US": "1", "IN": "91",
+    "PK": "92", "LK": "94", "BD": "880", "DE": "49", "FR": "33", "IT": "39", "ES": "34", "NL": "31",
+    "TR": "90", "PH": "63", "YE": "967", "SD": "249", "SY": "963",
+}
+_SPLIT = {"966": (2, 3, 4), "971": (2, 3, 4), "965": (4, 4), "974": (4, 4), "973": (4, 4), "968": (4, 4)}
+
+
+def normalize_phone(value: str | None, country_code: str | None = None, default_country: str = "SA") -> str | None:
+    """Return the number in international form with its country code, e.g. '050 006 0878' -> '+966 50 006 0878'.
+
+    Numbers already carrying a code (+44..., 0044..., 966...) keep it; local numbers get the code of the
+    contact's country (default Saudi Arabia). Unparseable values are returned trimmed, unchanged.
+    """
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw or raw in ("-", "–", "—"):
+        return None
+    if isinstance(value, float) and value.is_integer():
+        raw = str(int(value))
+    digits = re.sub(r"\D", "", raw)
+    if not digits:
+        return raw[:40]
+    if raw.startswith("+"):
+        intl = digits
+    elif digits.startswith("00"):
+        intl = digits[2:]
+    else:
+        cc = CALLING_CODES.get((country_code or default_country or "SA").upper(), "966")
+        if digits.startswith(cc) and len(digits) > len(cc) + 6:
+            intl = digits
+        else:
+            intl = cc + digits.lstrip("0")
+    code = next((c for c in sorted(_SPLIT, key=len, reverse=True) if intl.startswith(c)), None)
+    if code:
+        rest = intl[len(code):]
+        parts, i = [], 0
+        for n in _SPLIT[code]:
+            if i < len(rest):
+                parts.append(rest[i:i + n])
+                i += n
+        if i < len(rest):
+            parts[-1] += rest[i:]
+        return f"+{code} {' '.join(parts)}"[:40]
+    code = next((c for c in sorted(set(CALLING_CODES.values()), key=len, reverse=True) if intl.startswith(c)), None)
+    if code:
+        return f"+{code} {intl[len(code):]}"[:40]
+    return f"+{intl}"[:40]

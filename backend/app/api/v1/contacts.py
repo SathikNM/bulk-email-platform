@@ -23,7 +23,7 @@ from app.models import (
     Tag,
 )
 from app.models.enums import LawfulBasis, MemberRole, SubscriptionStatus, SuppressionReason, VerificationStatus
-from app.services.common import audit, get_or_404, is_role_account, paginate, row_dict
+from app.services.common import audit, get_or_404, is_role_account, normalize_phone, paginate, row_dict
 from app.services.compliance import unsubscribe_contact
 from app.services.exports import export_response
 from app.services.jobs import enqueue_after_commit
@@ -278,6 +278,7 @@ def create_contact(body: ContactIn, ctx: Ctx = Marketer):
     if body.category_id:
         get_or_404(ctx.db, Category, body.category_id, "Category")
     data = body.model_dump(exclude={"tag_ids", "consent_source", "consent_date", "lawful_basis"})
+    data["phone"] = normalize_phone(data.get("phone"), data.get("country_code"))
     c = Contact(workspace_id=ctx.workspace_id, created_by=ctx.user.id, **data)
     try:
         with ctx.db.begin_nested():
@@ -304,6 +305,8 @@ def update_contact(contact_id: uuid.UUID, body: ContactUpdate, ctx: Ctx = Market
     c = get_or_404(ctx.db, Contact, contact_id, "Contact")
     before = row_dict(c)
     data = body.model_dump(exclude_unset=True, exclude={"tag_ids"})
+    if data.get("phone"):
+        data["phone"] = normalize_phone(data["phone"], data.get("country_code") or c.country_code)
     if "company_id" in data:
         get_or_404(ctx.db, Company, data["company_id"], "Company")
     for k, v in data.items():

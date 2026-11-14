@@ -188,5 +188,22 @@ def test_import_arabic_names_and_dash_as_empty(api):
     assert a["name_ar"] == "أحمد الحربي" and a["company_name_ar"] == "شركة الفيصل القابضة"
     assert a["phone"] is None and a["first_name"] == "Ahmed" and a["subscription_status"] == "subscribed"
     assert s["name_ar"] is None and s["job_title"] is None and s["subscription_status"] == "pending"
+    assert s["phone"] == "+966 50 123 4567"
     assert api.get("/contacts", params={"q": "الحربي"}).json()["total"] == 1
     assert api.get("/companies", params={"q": "الفيصل"}).json()["total"] == 1
+
+
+def test_phone_numbers_get_country_code():
+    from app.services.common import normalize_phone as n
+    assert n("050 006 0878") == "+966 50 006 0878"
+    assert n("0500060878") == n("500060878") == n("00966500060878") == n("+966 50 006 0878") == "+966 50 006 0878"
+    assert n("011 234 5678") == "+966 11 234 5678"
+    assert n("050 123 4567", "AE") == "+971 50 123 4567"
+    assert n("+44 20 7946 0958").startswith("+44 ")
+    assert n("-") is None and n(None) is None
+
+
+def test_contact_form_phone_normalised(api):
+    co = _company(api)
+    r = api.post("/contacts", json={"company_id": co, "email": "p@acme.sa", "phone": "055 226 8511"})
+    assert r.status_code == 201 and r.json()["phone"] == "+966 55 226 8511"

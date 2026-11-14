@@ -40,7 +40,7 @@ from app.models.enums import (
     SuppressionReason,
 )
 from app.services import storage
-from app.services.common import domain_from_website, is_role_account, normalise_country
+from app.services.common import domain_from_website, is_role_account, normalise_country, normalize_phone
 
 BATCH = 500
 MAX_ERRORS = 1000
@@ -388,6 +388,8 @@ def _upsert_contact(db: Session, lk: _Lookup, r: dict, opts: dict, suppressed: s
         if not cc:
             raise ValueError(f"Unknown country '{r['country']}'")
         values["country_code"] = cc
+    if values.get("phone"):
+        values["phone"] = normalize_phone(values["phone"], values.get("country_code"))
     cat = lk.category(CategoryScope.CONTACT, _cell(r.get("category")))
     if cat:
         values["category_id"] = cat
