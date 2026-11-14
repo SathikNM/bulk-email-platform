@@ -12,7 +12,7 @@ type AuthCtx = {
   workspaceId: string | null;
   role: Role | null;
   can: (min: Role) => boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, otp?: string) => Promise<void>;
   logout: () => Promise<void>;
   switchWorkspace: (id: string) => void;
   reload: () => Promise<void>;
@@ -47,8 +47,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [loadMe]);
 
-  const login = async (email: string, password: string) => {
-    const r = await api.post<{ access_token: string }>("/auth/login", { email, password });
+  const login = async (email: string, password: string, otp?: string) => {
+    const r = await api.post<{ access_token: string }>("/auth/login", { email, password, ...(otp ? { otp } : {}) });
     session.token = r.access_token;
     await loadMe();
   };

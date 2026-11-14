@@ -1,0 +1,116 @@
+name: bulk-email-prod
+
+# Production stack for a dedicated mail VPS (see docs/06-deployment.md).
+#   docker compose -f infra/docker-compose.prod.yml --env-file /opt/bulk-email/.env.prod up -d --build
+# Public ports: 80/443 (Caddy, automatic HTTPS) and 25 (bounce receiver). Nothing else is exposed.
+
+x-app-env: &app-env
+  ENVIRONMENT: production
+  DATABASE_URL: postgresql+psycopg://bep:${POSTGRES_PASSWORD}@postgres:5432/bep
+  REDIS_URL: redis://redis:6379/0
+  SECRET_KEY: ${SECRET_KEY}
+  CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY}
+  PUBLIC_BASE_URL: https://${DOMAIN}
+  APP_BASE_URL: https://${DOMAIN}
+  CORS_ORIGINS: '["https://${DOMAIN}"]'
+  COOKIE_SECURE: "true"
+  STORAGE_BACKEND: local
+  LOCAL_STORAGE_DIR: /data/uploads
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
+  SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+
+x-backend: &backend
+  build: ../backend
+  restart: unless-stopped
+  environment: *app-env
+  volumes: [uploads:/data/uploads]
+  depends_on:
+    migrate: { condition: service_completed_successfully }
+    redis: { condition: service_healthy }
+  logging: &logs
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_USER: bep, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}", POSTGRES_DB: bep }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U bep"], interval: 5s, retries: 20 }
+    logging: *logs
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes: [redisdata:/data]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 5s, retries: 20 }
+    logging: *logs
+
+  migrate:
+    build: ../backend
+    environment: *app-env
+    command: sh -c "python -m alembic upgrade head && python -m app.db.seed"
+    depends_on: { postgres: { condition: service_healthy } }
+    restart: "no"
+    healthcheck: { disable: true }
+
+  api:
+    <<: *backend
+
+  worker:
+    <<: *backend
+    command: celery -A app.workers.celery_app:celery worker -Q celery,send --concurrency 4 --loglevel INFO
+    healthcheck: { disable: true }
+
+  beat:
+    <<: *backend
+    command: celery -A app.workers.celery_app:celery beat --loglevel INFO --schedule /tmp/celerybeat-schedule
+    healthcheck: { disable: true }
+
+  bounce:
+    <<: *backend
+    command: python -m app.workers.bounce_server
+    environment:
+      <<: *app-env
+      BOUNCE_HOSTNAME: ${HELO_HOSTNAME}
+    ports: ["25:25"]
+    healthcheck: { disable: true }
+
+  web:
+    build: { context: ../frontend, args: { BACKEND_URL: "http://api:8000" } }
+    restart: unless-stopped
+    depends_on: [api]
+    logging: *logs
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+      ADMIN_ALLOWED_CIDRS: ${ADMIN_ALLOWED_CIDRS:-0.0.0.0/0 ::/0}
+    volumes:
+      - ./prod/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on: [api, web]
+    logging: *logs
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { PGPASSWORD: "${POSTGRES_PASSWORD}" }
+    volumes: ["${BACKUP_DIR:-/opt/bulk-email/backups}:/backups"]
+    entrypoint: ["sh", "-c", "while true; do pg_dump -h postgres -U bep bep | gzip > /backups/bep-$$(date +%F).sql.gz && find /backups -name 'bep-*.sql.gz' -mtime +14 -delete; sleep 86400; done"]
+    depends_on: { postgres: { condition: service_healthy } }
+    logging: *logs
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+  caddydata:
+  caddyconfig:

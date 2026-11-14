@@ -4,7 +4,7 @@ import { Send } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { Alert, Button, Field } from "@/components/ui";
-import { errorMessage } from "@/lib/api";
+import { ApiError, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 function LoginForm() {
@@ -13,6 +13,8 @@ function LoginForm() {
   const next = useSearchParams().get("next") || "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
+  const [needOtp, setNeedOtp] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -25,9 +27,13 @@ function LoginForm() {
     setErr(null);
     setBusy(true);
     try {
-      await login(email, password);
+      await login(email, password, needOtp ? otp : undefined);
     } catch (e) {
-      setErr(errorMessage(e));
+      if (e instanceof ApiError && e.body.otp_required) {
+        if (needOtp) setErr(errorMessage(e));
+        setNeedOtp(true);
+        setOtp("");
+      } else setErr(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -55,7 +61,8 @@ function LoginForm() {
           {err && <Alert tone="red">{err}</Alert>}
           <Field label="Email"><input className="input" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
           <Field label="Password"><input className="input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
-          <Button variant="primary" className="w-full" type="submit" loading={busy}>Sign in</Button>
+          {needOtp && <Field label="Authenticator code" hint="6-digit code from your authenticator app"><input className="input tracking-[0.3em]" inputMode="numeric" autoComplete="one-time-code" autoFocus required maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} /></Field>}
+          <Button variant="primary" className="w-full" type="submit" loading={busy}>{needOtp ? "Verify and sign in" : "Sign in"}</Button>
         </form>
       </div>
     </div>

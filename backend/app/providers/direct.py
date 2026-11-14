@@ -179,6 +179,16 @@ class DirectProvider(EmailProvider):
         self._conns[host] = conn
         return conn
 
+    def envelope_sender(self, email: OutgoingEmail) -> str:
+        """VERP address on the bounce subdomain (identifies the recipient in late bounces)."""
+        if not self.rp:
+            return email.from_email
+        rid = email.tags.get("recipient")
+        if rid:
+            from app.services.bounces import verp_address
+            return verp_address(rid, self.rp)
+        return f"bounces@{self.rp}"
+
     def send(self, email: OutgoingEmail) -> str:
         msg = email.to_mime(domain=self.domain)
         if "Date" not in msg:
@@ -192,7 +202,7 @@ class DirectProvider(EmailProvider):
             self._pace(_mx_group(host))
             try:
                 conn = self._open(host)
-                conn.sendmail(f"bounces@{self.rp}" if self.rp else email.from_email, [email.to], raw)
+                conn.sendmail(self.envelope_sender(email), [email.to], raw)
                 return msg["Message-ID"].strip("<>")
             except smtplib.SMTPRecipientsRefused as e:
                 code, text = next(iter(e.recipients.values()))

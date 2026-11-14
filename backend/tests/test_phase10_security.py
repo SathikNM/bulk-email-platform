@@ -61,3 +61,40 @@ def test_role_matrix(client, api, method, path, role):
     other = api_with_role(client, api.ws, role)
     r = getattr(other, method)(path, json={}) if method == "post" else other.get(path)
     assert r.status_code == 403
+
+
+def test_two_factor_login(client, api):
+    import time
+
+    from app.core import totp
+    from app.core.redis import get_redis
+    me = api.get("/auth/me").json()
+    assert me["totp_enabled"] is False
+    s = api.post("/auth/2fa/setup").json()
+    assert s["otpauth_uri"].startswith("otpauth://totp/") and s["secret"] in s["otpauth_uri"]
+    assert api.post("/auth/2fa/enable", json={"code": "000000"}).status_code == 400
+    assert api.post("/auth/2fa/enable", json={"code": totp.now_code(s["secret"])}).status_code == 204
+    assert api.get("/auth/me").json()["totp_enabled"] is True
+
+    email, pw = me["email"], "Str0ng!Passw0rd"
+    r = client.post("/api/v1/auth/login", json={"email": email, "password": pw})
+    assert r.status_code == 401 and r.json().get("otp_required") is True
+    assert client.post("/api/v1/auth/login", json={"email": email, "password": pw, "otp": "123456"}).status_code == 401
+    get_redis().delete(f"login_fail:{email.lower()}")
+    code = totp.now_code(s["secret"], time.time() + 30)        # next step (still within the window)
+    assert client.post("/api/v1/auth/login", json={"email": email, "password": pw, "otp": code}).status_code == 200
+    # the same code cannot be replayed
+    assert client.post("/api/v1/auth/login", json={"email": email, "password": pw, "otp": code}).status_code == 401
+    get_redis().delete(f"login_fail:{email.lower()}")
+    code2 = totp.now_code(s["secret"], time.time() - 30)
+    assert api.post("/auth/2fa/disable", json={"code": code2, "password": pw}).status_code == 204
+    assert api.get("/auth/me").json()["totp_enabled"] is False
+
+
+def test_totp_rfc6238_vector():
+    import base64
+
+    from app.core import totp
+    secret = base64.b32encode(b"12345678901234567890").decode()
+    assert totp._code(secret, 59 // 30) == "287082"          # RFC 6238 appendix B (SHA1, 6 digits)
+    assert totp._code(secret, 1111111109 // 30) == "081804"

@@ -26,3 +26,11 @@ Thumbs.db
 
 # Script logs
 logs/*.log
+logs/*.bundle
+logs/*.tgz
+logs/*.pub
+logs/*.bak
+logs/vps-command.sh
+
+# Local deployment settings
+scripts/deploy-config.cmd

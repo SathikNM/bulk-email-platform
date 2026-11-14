@@ -7,6 +7,7 @@ export type Me = {
   email: string;
   full_name: string;
   is_superadmin: boolean;
+  totp_enabled?: boolean;
   workspaces: { id: string; name: string; slug: string; role: Role; default_locale: string }[];
 };
 

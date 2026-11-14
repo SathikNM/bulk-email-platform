@@ -33,6 +33,8 @@ class User(UUIDPk, Timestamps, Base):
     is_active: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.true(), nullable=False)
     is_superadmin: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.false(), nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    totp_secret_enc: Mapped[bytes | None] = mapped_column(sa.LargeBinary)
+    totp_enabled: Mapped[bool] = mapped_column(sa.Boolean, server_default=sa.false(), nullable=False)
 
 
 class WorkspaceMember(Timestamps, Base):

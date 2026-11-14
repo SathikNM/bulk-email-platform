@@ -25,7 +25,7 @@ function SettingsInner() {
       {tab === "members" && <Members />}
       {tab === "suppressions" && <Suppressions />}
       {tab === "audit" && <Audit />}
-      {tab === "account" && <Account />}
+      {tab === "account" && <div className="space-y-5"><Account /><TwoFactor /></div>}
     </>
   );
 }
@@ -165,6 +165,47 @@ function Account() {
       <Field label="Confirm new password" error={f.confirm && f.confirm !== f.new_password ? "Passwords do not match" : undefined}><input className="input" type="password" autoComplete="new-password" value={f.confirm} onChange={(e) => setF({ ...f, confirm: e.target.value })} /></Field>
       <Button variant="primary" loading={save.isPending} disabled={!f.current_password || f.new_password.length < 10 || f.new_password !== f.confirm} onClick={() => save.mutate(undefined)}>Change password</Button>
     </div></Card>
+  );
+}
+
+function TwoFactor() {
+  const { me, reload } = useAuth();
+  const [setup, setSetup] = useState<{ secret: string; qr: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [pw, setPw] = useState("");
+  const start = useAction(async () => {
+    const r = await api.post<{ secret: string; otpauth_uri: string }>("/auth/2fa/setup");
+    const QR = await import("qrcode");
+    setSetup({ secret: r.secret, qr: await QR.toDataURL(r.otpauth_uri, { margin: 1, width: 200 }) });
+    setCode("");
+  });
+  const enable = useAction(() => api.post("/auth/2fa/enable", { code }), { success: "Two-factor sign-in is on", onSuccess: () => { setSetup(null); setCode(""); reload(); } });
+  const disable = useAction(() => api.post("/auth/2fa/disable", { code, password: pw }), { success: "Two-factor sign-in turned off", onSuccess: () => { setCode(""); setPw(""); reload(); } });
+  const codeInput = <Field label="6-digit code"><input className="input tracking-[0.3em]" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} /></Field>;
+  return (
+    <Card className="max-w-lg" title="Two-factor sign-in">
+      {me?.totp_enabled ? (
+        <div className="space-y-3">
+          <Alert tone="green">On: signing in needs your password and a code from your authenticator app.</Alert>
+          <Field label="Current password"><input className="input" type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+          {codeInput}
+          <Button variant="danger" loading={disable.isPending} disabled={!pw || code.length !== 6} onClick={() => disable.mutate(undefined)}>Turn off</Button>
+        </div>
+      ) : setup ? (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">Scan this with Google Authenticator, Microsoft Authenticator or 1Password, then enter the code it shows.</p>
+          <img src={setup.qr} alt="Authenticator QR code" className="h-48 w-48 rounded border border-slate-200" />
+          <p className="break-all text-xs text-slate-500">Can&apos;t scan? Enter this key manually: <span className="font-mono">{setup.secret}</span></p>
+          {codeInput}
+          <div className="flex gap-2"><Button onClick={() => setSetup(null)}>Cancel</Button><Button variant="primary" loading={enable.isPending} disabled={code.length !== 6} onClick={() => enable.mutate(undefined)}>Turn on</Button></div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-600">Protect this account with a code from your phone in addition to your password.</p>
+          <Button variant="primary" loading={start.isPending} onClick={() => start.mutate(undefined)}>Set up two-factor sign-in</Button>
+        </div>
+      )}
+    </Card>
   );
 }
 

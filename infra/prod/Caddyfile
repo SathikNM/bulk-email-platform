@@ -1,0 +1,25 @@
+# Automatic HTTPS for the platform. The admin UI and API are limited to ADMIN_ALLOWED_CIDRS
+# (space-separated; default: everyone). Tracking, unsubscribe and asset links stay public because
+# recipients open them from anywhere.
+{$DOMAIN} {
+	encode zstd gzip
+
+	@restricted {
+		not remote_ip {$ADMIN_ALLOWED_CIDRS}
+		not path /t/* /u/* /assets/* /webhooks/*
+	}
+	respond @restricted "Access restricted" 403
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	@backend path /api/* /health /health/* /t/* /u/* /assets/* /webhooks/*
+	handle @backend {
+		reverse_proxy api:8000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

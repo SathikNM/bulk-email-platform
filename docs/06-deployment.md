@@ -128,3 +128,25 @@ still see `From: info@primecfo.sa`. DMARC passes through DKIM alignment (`d=prim
 Run the platform on a dedicated VPS whose provider allows outbound port 25 and self-service reverse DNS
 (AWS, GCP, Azure and Oracle block port 25 by default). 4 GB RAM / 40 GB disk is enough. Do not co-host it with
 other production systems.
+
+## Production on the mail VPS (step by step)
+
+Files: `infra/docker-compose.prod.yml`, `infra/prod/Caddyfile`, `infra/prod/server-setup.sh`,
+`scripts/deploy-vps.cmd` (run from the Windows PC that holds the deploy SSH key).
+
+1. Copy `scripts/deploy-config.example.cmd` to `scripts/deploy-config.cmd` and set `VPS_HOST`, `DOMAIN`,
+   `HELO`, `ADMIN_EMAIL` and optionally `ADMIN_CIDRS` (office/VPN ranges allowed to open the admin UI).
+2. Run `scripts/deploy-vps.cmd`. It uploads the committed code and runs `server-setup.sh`, which installs
+   Docker, opens ports 22/25/80/443 in ufw, generates secrets in `/opt/bulk-email/.env.prod` (first run only,
+   printing the initial admin password into `logs/deploy.log`), builds and starts the stack, then reports
+   the public IP, reverse DNS and outbound port-25 status.
+3. Add DNS: `A <DOMAIN>`, `A mail.<domain>`, `A news.<domain>`, `MX news.<domain> → mail.<domain>`,
+   `TXT news.<domain> v=spf1 ip4:<IP> -all`, and the DKIM TXT shown by **Verify & DNS**.
+4. Sign in at `https://<DOMAIN>`, change the admin password, turn on two-factor sign-in
+   (Settings → Account), add the direct-delivery sending account with bounce subdomain `news.<domain>`,
+   then click **Verify & DNS** until every check is green.
+
+Re-running `deploy-vps.cmd` updates the server in place; data, secrets and certificates are kept.
+Backups: a daily `pg_dump` is written to `/opt/bulk-email/backups` and kept for 14 days.
+`scripts/vps-run.cmd` runs `logs/vps-command.sh` on the server for diagnostics.
+The `ubuntu` user needs passwordless sudo (or membership of the `docker` group after the first run).
