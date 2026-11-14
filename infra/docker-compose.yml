@@ -1,5 +1,27 @@
 name: bulk-email-platform
 
+# Infrastructure only (default):      docker compose -f infra/docker-compose.yml up -d
+# Full platform (API, workers, web):  docker compose -f infra/docker-compose.yml --profile app up -d --build
+
+x-app-env: &app-env
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  DATABASE_URL: postgresql+psycopg://bep:bep@postgres:5432/bep
+  REDIS_URL: redis://redis:6379/0
+  SECRET_KEY: ${SECRET_KEY:-change-me-in-production-0123456789abcdef}
+  CREDENTIALS_ENCRYPTION_KEY: ${CREDENTIALS_ENCRYPTION_KEY:-}
+  PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+  APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+  CORS_ORIGINS: '["http://localhost:3000"]'
+  COOKIE_SECURE: ${COOKIE_SECURE:-false}
+  STORAGE_BACKEND: local
+  LOCAL_STORAGE_DIR: /data/uploads
+  AWS_REGION: ${AWS_REGION:-me-central-1}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@primecfo.local}
+  SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -19,10 +41,14 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
 
   s3:
-    # S3-compatible object storage for images and import files (local dev).
-    # MinIO's public images were withdrawn in 2025-26, so SeaweedFS is used instead.
+    # S3-compatible object storage for local dev. MinIO's public images were withdrawn
+    # in 2025-26, so SeaweedFS is used instead.
     image: chrislusf/seaweedfs:latest
     restart: unless-stopped
     command: server -s3 -dir=/data -ip.bind=0.0.0.0
@@ -30,11 +56,62 @@ services:
     volumes: [s3data:/data]
 
   mailpit:
-    # Local SMTP capture for test sends. NOT real delivery.
+    # Local SMTP capture for test sends (http://localhost:8025). NOT real delivery.
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports: ["1025:1025", "8025:8025"]
 
+  migrate:
+    profiles: ["app"]
+    build: ../backend
+    environment: *app-env
+    command: sh -c "python -m alembic upgrade head && python -m app.db.seed"
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    profiles: ["app"]
+    build: ../backend
+    restart: unless-stopped
+    environment: *app-env
+    ports: ["8000:8000"]
+    volumes: [uploads:/data/uploads]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    profiles: ["app"]
+    build: ../backend
+    restart: unless-stopped
+    environment: *app-env
+    command: celery -A app.workers.celery_app:celery worker -Q celery,send --concurrency 4 --loglevel INFO
+    volumes: [uploads:/data/uploads]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  beat:
+    profiles: ["app"]
+    build: ../backend
+    restart: unless-stopped
+    environment: *app-env
+    command: celery -A app.workers.celery_app:celery beat --loglevel INFO --schedule /tmp/celerybeat-schedule
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  web:
+    profiles: ["app"]
+    build:
+      context: ../frontend
+      args: { BACKEND_URL: "http://api:8000" }
+    restart: unless-stopped
+    ports: ["3000:3000"]
+    depends_on: [api]
+
 volumes:
   pgdata:
   s3data:
+  uploads:

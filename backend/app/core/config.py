@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     LLM_API_URL: str = "https://api.anthropic.com/v1/messages"
 
     # Security
+    RATE_LIMIT_ENABLED: bool = True
     LOGIN_MAX_FAILURES: int = 5
     LOGIN_LOCK_MINUTES: int = 15
     MAX_UPLOAD_MB: int = 25

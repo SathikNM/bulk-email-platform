@@ -8,16 +8,30 @@ from app.api import public
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import install_error_handlers
+from app.core.middleware import (
+    RateLimitMiddleware,
+    SecurityHeadersMiddleware,
+    configure_logging,
+    validate_production_settings,
+)
 from app.db.session import get_engine
 
 
 def create_app() -> FastAPI:
+    configure_logging()
+    problems = validate_production_settings()
+    if problems:
+        raise RuntimeError("Unsafe production configuration:\n- " + "\n- ".join(problems))
+    prod = settings.ENVIRONMENT == "production"
     app = FastAPI(
         title=settings.PROJECT_NAME,
         version=settings.VERSION,
-        openapi_url="/api/openapi.json",
-        docs_url="/api/docs",
+        openapi_url=None if prod else "/api/openapi.json",
+        docs_url=None if prod else "/api/docs",
+        redoc_url=None,
     )
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,

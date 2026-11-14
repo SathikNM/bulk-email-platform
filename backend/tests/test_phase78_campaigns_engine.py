@@ -159,7 +159,6 @@ def test_no_duplicate_sends_on_rerun(api, smtp_sink):
 
 
 def test_suppression_rechecked_at_send_time(api, smtp_sink):
-    from app.services import sending
     from app.workers.tasks import send_batch
     w = setup_world(api, smtp_sink.port)
     c = make_campaign(api, w)
@@ -203,7 +202,6 @@ def test_daily_limit_defers_remaining(api, smtp_sink):
 
 
 def test_pause_stops_and_resume_finishes(api, smtp_sink):
-    from app.services import sending
     w = setup_world(api, smtp_sink.port)
     c = make_campaign(api, w)
     api.post(f"/campaigns/{c['id']}/approve", json={"scheduled_at": "2030-01-01T09:00:00Z"})

@@ -104,6 +104,8 @@ def app_env(tmp_path_factory, request):
     settings.LOCAL_STORAGE_DIR = str(tmp_path_factory.mktemp("uploads"))
     settings.STORAGE_BACKEND = "local"
     settings.SES_WEBHOOK_VERIFY_SIGNATURE = True
+    settings.ENVIRONMENT = "test"
+    settings.RATE_LIMIT_ENABLED = False
     celery.conf.task_always_eager = True
     celery.conf.task_eager_propagates = True
     yield
