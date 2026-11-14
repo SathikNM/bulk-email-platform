@@ -11,6 +11,7 @@ from datetime import datetime
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from app.models import Company as Co
 from app.models import (
     CompanyCategory,
     CompanyTag,
@@ -19,7 +20,6 @@ from app.models import (
     ContactTag,
     Suppression,
 )
-from app.models import Company as Co
 from app.models.enums import CompanySize, CompanyStatus, SubscriptionStatus, VerificationStatus
 from app.services.compliance import eligibility_clause
 

@@ -23,8 +23,8 @@ from app.models import (
     Tag,
 )
 from app.models.enums import LawfulBasis, MemberRole, SubscriptionStatus, SuppressionReason, VerificationStatus
-from app.services.compliance import unsubscribe_contact
 from app.services.common import audit, get_or_404, is_role_account, paginate, row_dict
+from app.services.compliance import unsubscribe_contact
 from app.services.exports import export_response
 from app.services.jobs import enqueue_after_commit
 

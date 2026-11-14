@@ -1,13 +1,27 @@
 """v1 API router."""
 from fastapi import APIRouter
 
-from app.api.v1 import auth, companies, contacts, imports, segments, suppressions, taxonomy, workspaces
+from app.api.v1 import (
+    ai,
+    auth,
+    companies,
+    contacts,
+    imports,
+    segments,
+    sending_accounts,
+    suppressions,
+    taxonomy,
+    templates,
+    workspaces,
+)
 
 api_router = APIRouter()
-for module in (auth, workspaces, taxonomy, companies, contacts, imports, suppressions, segments):
+for module in (auth, workspaces, taxonomy, companies, contacts, imports, suppressions, segments,
+               templates, ai, sending_accounts):
     api_router.include_router(module.router)
 
-MODULES = ["auth", "workspaces", "taxonomy", "companies", "contacts", "imports", "suppressions", "segments"]
+MODULES = ["auth", "workspaces", "taxonomy", "companies", "contacts", "imports", "suppressions", "segments",
+           "templates", "ai", "sending_accounts"]
 
 
 @api_router.get("/meta", tags=["meta"])

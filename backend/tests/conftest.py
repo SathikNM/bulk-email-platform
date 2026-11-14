@@ -207,3 +207,52 @@ def api_with_role(client, ws_id, role):
     with system_scope() as s:
         s.add(WorkspaceMember(workspace_id=ws_id, user_id=uid, role=MemberRole(role)))
     return Api(client, ws_id, login(client, email, pw))
+
+
+# ---------------------------------------------------------------- real SMTP sink
+class _Sink:
+    def __init__(self):
+        self.messages = []
+
+    async def handle_DATA(self, server, session, envelope):  # noqa: N802 - aiosmtpd API
+        import email
+        import email.policy
+        self.messages.append({"from": envelope.mail_from, "to": list(envelope.rcpt_tos),
+                              "msg": email.message_from_bytes(envelope.content, policy=email.policy.default)})
+        return "250 OK"
+
+    async def handle_RCPT(self, server, session, envelope, address, rcpt_options):  # noqa: N802
+        if address.startswith("reject"):
+            return "550 5.1.1 No such user"
+        if address.startswith("busy"):
+            return "451 4.3.0 Try again later"
+        envelope.rcpt_tos.append(address)
+        return "250 OK"
+
+
+@pytest.fixture
+def smtp_sink():
+    """A real SMTP server on localhost (aiosmtpd) capturing everything sent to it."""
+    import socket
+
+    from aiosmtpd.controller import Controller
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    sink = _Sink()
+    ctl = Controller(sink, hostname="127.0.0.1", port=port)
+    ctl.start()
+    sink.port = port
+    yield sink
+    ctl.stop()
+
+
+def smtp_account(api, port, **kw):
+    r = api.post("/sending-accounts", json={
+        "name": "Local SMTP", "provider": "smtp", "from_email": "news@primecfo-demo.com", "from_name": "Prime CFO",
+        "max_per_second": 50, "max_per_day": 10000,
+        "credentials": {"host": "127.0.0.1", "port": port, "security": "none"}, **kw})
+    assert r.status_code == 201, r.text
+    return r.json()

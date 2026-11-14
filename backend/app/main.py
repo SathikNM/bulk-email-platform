@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api import public
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import install_error_handlers
@@ -26,6 +27,7 @@ def create_app() -> FastAPI:
     )
     install_error_handlers(app)
     app.include_router(api_router, prefix="/api/v1")
+    app.include_router(public.router)
 
     @app.get("/health", tags=["health"])
     def health() -> dict[str, str]:
