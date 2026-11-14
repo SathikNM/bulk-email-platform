@@ -2,7 +2,8 @@
 
 Reads /tmp/import.xlsx inside the API container, imports it into the first workspace with the platform's
 normal import engine (same validation, de-duplication, suppression and consent rules as the web import),
-then gives every imported contact's company the same category as the contact.
+then gives every contact's company the same category and tags as the contact.
+Contacts whose email already exists are skipped (never duplicated or overwritten).
 """
 import os
 import uuid
@@ -32,7 +33,7 @@ storage.put(key, data)
 db = worker_session(ws_id)
 try:
     job = ImportJob(workspace_id=ws_id, entity=ImportEntity.CONTACT, file_key=key, original_filename=fname,
-                    column_mapping=mapping, options={"update_existing": True, "create_missing_taxonomy": True},
+                    column_mapping=mapping, options={"update_existing": False, "create_missing_taxonomy": True},
                     created_by=user_id)
     db.add(job)
     db.commit()
@@ -58,6 +59,10 @@ try:
     for company_id, n in pairs:
         db.execute(sa.text("INSERT INTO company_categories (company_id, category_id) VALUES (:a, :b) "
                            "ON CONFLICT DO NOTHING"), {"a": company_id, "b": comp_cats[n]})
+    # Company tags = union of its contacts' tags
+    db.execute(sa.text("""INSERT INTO company_tags (company_id, tag_id)
+                          SELECT DISTINCT c.company_id, ct.tag_id FROM contact_tags ct JOIN contacts c ON c.id = ct.contact_id
+                          WHERE c.deleted_at IS NULL ON CONFLICT DO NOTHING"""))
     db.commit()
     print("companies:", db.scalar(sa.select(sa.func.count()).select_from(Company)),
           "| with Arabic name:", db.scalar(sa.select(sa.func.count()).select_from(Company).where(Company.name_ar.is_not(None))),
