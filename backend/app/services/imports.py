@@ -413,12 +413,12 @@ def _upsert_suppression(db: Session, ws: uuid.UUID, r: dict, created_by=None) ->
         reason = SuppressionReason(reason_raw)
     except ValueError:
         reason = SuppressionReason.MANUAL
-    res = db.execute(pg_insert(Suppression).values(
+    res = db.execute(pg_insert(Suppression.__table__).values(
         workspace_id=ws, email=email, reason=reason, source="import", created_by=created_by)
-        .on_conflict_do_nothing())
+        .on_conflict_do_nothing().returning(Suppression.__table__.c.id))
     db.execute(sa.update(Contact).where(Contact.email == email).values(
         subscription_status=SubscriptionStatus.UNSUBSCRIBED))
-    return "inserted" if res.rowcount else "skipped"
+    return "inserted" if res.first() is not None else "skipped"
 
 
 def run_job(db: Session, job: ImportJob) -> None:

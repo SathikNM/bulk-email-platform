@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import CITEXT, INET, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, SoftDelete, Timestamps, UUIDPk, pg_enum, workspace_fk
-from app.models.enums import CampaignStatus, EventType, IdentityStatus, Provider, RecipientStatus
+from app.models.enums import CampaignStatus, EventType, IdentityStatus, Provider, RecipientStatus, TextDirection
 
 
 class SendingAccount(UUIDPk, Timestamps, Base):
@@ -65,6 +65,10 @@ class Campaign(UUIDPk, Timestamps, SoftDelete, Base):
     )
     subject: Mapped[str | None] = mapped_column(sa.String(300))
     preheader: Mapped[str | None] = mapped_column(sa.String(300))
+    # Editable content override for this campaign (draft); falls back to the template.
+    content_html: Mapped[str | None] = mapped_column(sa.Text)
+    direction: Mapped[TextDirection | None] = mapped_column(pg_enum(TextDirection, "text_direction"))
+    # Frozen, prepared HTML (footer, inlined CSS, tracked-link placeholders) set at approval.
     html_snapshot: Mapped[str | None] = mapped_column(sa.Text)
     text_snapshot: Mapped[str | None] = mapped_column(sa.Text)
     manual_contact_ids: Mapped[list] = mapped_column(
@@ -117,6 +121,7 @@ class CampaignRecipient(UUIDPk, Timestamps, Base):
     )
     provider_message_id: Mapped[str | None] = mapped_column(sa.String(255))
     attempts: Mapped[int] = mapped_column(sa.SmallInteger, server_default="0", nullable=False)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(sa.Text)
     sent_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
     delivered_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))

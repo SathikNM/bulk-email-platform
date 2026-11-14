@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     ai,
     auth,
+    campaigns,
     companies,
     contacts,
     imports,
@@ -17,11 +18,11 @@ from app.api.v1 import (
 
 api_router = APIRouter()
 for module in (auth, workspaces, taxonomy, companies, contacts, imports, suppressions, segments,
-               templates, ai, sending_accounts):
+               templates, ai, sending_accounts, campaigns):
     api_router.include_router(module.router)
 
 MODULES = ["auth", "workspaces", "taxonomy", "companies", "contacts", "imports", "suppressions", "segments",
-           "templates", "ai", "sending_accounts"]
+           "templates", "ai", "sending_accounts", "campaigns"]
 
 
 @api_router.get("/meta", tags=["meta"])
